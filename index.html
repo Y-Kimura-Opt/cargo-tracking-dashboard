@@ -367,8 +367,12 @@
         return true;
       });
 
-      // Sort by event order
+      // Sort: scheduled_at/actual_at の時系列順（乗り継ぎ便対応）
+      // 時刻がない場合は EVENT_ORDER でフォールバック
       milestones.sort((a, b) => {
+        const timeA = new Date(a.actual_at || a.scheduled_at || "9999").getTime();
+        const timeB = new Date(b.actual_at || b.scheduled_at || "9999").getTime();
+        if (timeA !== timeB && !isNaN(timeA) && !isNaN(timeB)) return timeA - timeB;
         const ia = EVENT_ORDER.indexOf(a.event_code);
         const ib = EVENT_ORDER.indexOf(b.event_code);
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
