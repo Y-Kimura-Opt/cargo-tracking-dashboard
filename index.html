@@ -466,19 +466,11 @@
           meta.push(`<span>⏱ ${sign}${m.delay_minutes}min</span>`);
         }
 
-        // Timing analysis for API events (DEP/ARR) with actual data
-        // DEP/ARR: use flight actual times for more accurate analysis
+        // Timing analysis: FlightAware のみリアルタイム遅延分析を表示
+        // CargoAI Poll データは「通知遅延」に意味がないため非表示
         let timingHtml = "";
-        if ((m.source === "CARGOAI" || m.source === "FLIGHTAWARE") && m.created_at && (m.event_code === "DEP" || m.event_code === "ARR" || m.event_code === "RCS")) {
-          const timingActual = (m.event_code === "DEP" || m.event_code === "ARR") && matchedFlight
-            ? (m.event_code === "DEP" ? (matchedFlight.actual_departure || m.actual_at) : (matchedFlight.actual_arrival || m.actual_at))
-            : m.actual_at;
-          const timingScheduled = (m.event_code === "DEP" || m.event_code === "ARR") && matchedFlight
-            ? (m.event_code === "DEP" ? matchedFlight.scheduled_departure : matchedFlight.scheduled_arrival)
-            : m.scheduled_at;
-          if (timingActual) {
-            timingHtml = buildTimingAnalysis({ ...m, actual_at: timingActual, scheduled_at: timingScheduled || m.scheduled_at });
-          }
+        if (m.source === "FLIGHTAWARE" && m.created_at && m.actual_at) {
+          timingHtml = buildTimingAnalysis(m);
         }
 
         // DEP のみ区間を表示（例: 出発 OTP→IST）
@@ -583,29 +575,28 @@
     // Timing Analysis（遅延分析）
     // ============================================
     function buildTimingAnalysis(m) {
-      const eventTime = new Date(m.actual_at).getTime();     // T2: CargoAI eventDate（イベント発生時刻）
-      const webhookTime = new Date(m.created_at).getTime();  // T3: Webhook 受信時刻
+      const eventTime = new Date(m.actual_at).getTime();
+      const alertTime = new Date(m.created_at).getTime();
 
-      if (isNaN(eventTime) || isNaN(webhookTime)) return "";
+      if (isNaN(eventTime) || isNaN(alertTime)) return "";
 
-      // T2 → T3: eventDate から Webhook 受信までの遅延
-      const delayMs = webhookTime - eventTime;
+      const delayMs = alertTime - eventTime;
       const delayMin = Math.round(delayMs / 60000);
 
       let rows = [];
 
-      // イベント発生時刻
-      rows.push(`<div class="timing-row"><span class="timing-label">イベント発生 (eventDate)</span><span class="timing-value">${formatDateTime(m.actual_at)}</span></div>`);
+      // 実績時刻
+      rows.push(`<div class="timing-row"><span class="timing-label">実績時刻</span><span class="timing-value">${formatDateTime(m.actual_at)}</span></div>`);
 
-      // Webhook 受信時刻
-      rows.push(`<div class="timing-row"><span class="timing-label">Webhook 受信</span><span class="timing-value">${formatDateTime(m.created_at)}</span></div>`);
+      // Alert 受信時刻
+      rows.push(`<div class="timing-row"><span class="timing-label">FlightAware 通知</span><span class="timing-value">${formatDateTime(m.created_at)}</span></div>`);
 
-      // 遅延
-      const delayClass = delayMin <= 5 ? "fast" : (delayMin <= 30 ? "medium" : "slow");
-      const delayText = delayMin < 60 ? `${delayMin}分` : `${Math.floor(delayMin / 60)}時間${delayMin % 60}分`;
+      // 通知遅延（FlightAware のリアルタイム性を計測）
+      const delayClass = Math.abs(delayMin) <= 5 ? "fast" : (Math.abs(delayMin) <= 15 ? "medium" : "slow");
+      const delayText = Math.abs(delayMin) < 60 ? `${delayMin}分` : `${Math.floor(Math.abs(delayMin) / 60)}時間${Math.abs(delayMin) % 60}分`;
       rows.push(`<div class="timing-row"><span class="timing-label">通知遅延</span><span class="timing-value ${delayClass}">${delayText}</span></div>`);
 
-      // 予定 vs 実績の差（もしあれば）
+      // 予定 vs 実績の差
       if (m.scheduled_at) {
         const schedTime = new Date(m.scheduled_at).getTime();
         if (!isNaN(schedTime)) {
@@ -619,7 +610,7 @@
         }
       }
 
-      return `<div class="timing-analysis"><div class="timing-title">⏱ タイミング分析</div>${rows.join("")}</div>`;
+      return `<div class="timing-analysis"><div class="timing-title">⏱ FlightAware タイミング分析</div>${rows.join("")}</div>`;
     }
 
     // DEP/ARR は CargoAI が正。Kintone から予定として作成されたものは "API待ち" と表示
