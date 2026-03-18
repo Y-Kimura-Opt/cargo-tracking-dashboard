@@ -368,19 +368,32 @@
       });
 
       // Sort: EVENT_ORDER 降順（最新ステップが上）
-      // 同じ EVENT_ORDER 位置（DEP同士、ARR同士）は時刻降順（乗り継ぎ対応）
-      milestones.sort((a, b) => {
-        const ia = EVENT_ORDER.indexOf(a.event_code);
-        const ib = EVENT_ORDER.indexOf(b.event_code);
-        const orderA = ia === -1 ? 99 : ia;
-        const orderB = ib === -1 ? 99 : ib;
-        if (orderA !== orderB) return orderB - orderA;
-        // 同じイベントコード → 時刻降順（新しいレグが上）
-        const timeA = new Date(a.scheduled_at || a.actual_at || "0000").getTime();
-        const timeB = new Date(b.scheduled_at || b.actual_at || "0000").getTime();
-        if (timeA !== timeB) return timeB - timeA;
-        return 0;
-      });
+      // DEP/ARR はレグ単位でペア化（DEP→ARR を1グループとして扱う）
+      // 1. DEP/ARR 以外: EVENT_ORDER 降順
+      // 2. DEP/ARR: flight_number でレグをマッチし、レグ単位で時刻降順
+      //    各レグ内は ARR → DEP の順（降順）
+      const getGroupKey = (m) => {
+        if (m.event_code === "DEP" || m.event_code === "ARR") {
+          // DEP/ARR は同じ flight_number ならペア。時刻でレグ順を決定
+          // DEP の時刻をレグの基準時刻とする
+          const t = m.scheduled_at || m.actual_at || "9999";
+          const flightKey = m.flight_number || "unknown";
+          // DEP/ARR 共通のグループスコア: DEP の scheduled 時刻（レグ順）
+          // ARR は同じ flight の DEP より少し後のスコアにする
+          const baseTime = new Date(t).getTime();
+          // ARR は DEP + 1ms にして、降順で DEP が下（=ARR の後）に来る
+          return m.event_code === "ARR" ? baseTime + 1 : baseTime;
+        }
+        // DEP/ARR 以外: EVENT_ORDER で固定位置
+        const idx = EVENT_ORDER.indexOf(m.event_code);
+        const order = idx === -1 ? 99 : idx;
+        // 前半（TTA以前）は小スコア（下に配置）、後半（ICC以降）は大スコア（上に配置）
+        if (order <= 5) return order;
+        if (order >= 8) return Number.MAX_SAFE_INTEGER - (100 - order);
+        return 0; // DEP/ARR はここには来ない
+      };
+
+      milestones.sort((a, b) => getGroupKey(b) - getGroupKey(a));
 
       if (milestones.length === 0) {
         document.getElementById("tabTimeline").innerHTML = '<div class="loading">マイルストーンなし</div>';
