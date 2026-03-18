@@ -449,9 +449,9 @@
           }
         }
 
-        // DEP/ARR: タイトルに区間を表示（例: 出発 OTP→IST）
+        // DEP のみ区間を表示（例: 出発 OTP→IST）
         let routeLabel = "";
-        if ((m.event_code === "DEP" || m.event_code === "ARR") && matchedFlight) {
+        if (m.event_code === "DEP" && matchedFlight) {
           routeLabel = ` ${matchedFlight.origin}→${matchedFlight.destination}`;
         }
 
