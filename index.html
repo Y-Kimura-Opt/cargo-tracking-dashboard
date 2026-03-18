@@ -367,18 +367,18 @@
         return true;
       });
 
-      // Sort: EVENT_ORDER 順（業務フローの順番）を基本とし、
-      // 同じイベントコードが複数ある場合（乗り継ぎ）は時刻で昇順
+      // Sort: EVENT_ORDER の逆順（最新イベントが上）
+      // 同じイベントコード内は時刻の新しい順
       milestones.sort((a, b) => {
         const ia = EVENT_ORDER.indexOf(a.event_code);
         const ib = EVENT_ORDER.indexOf(b.event_code);
         const orderA = ia === -1 ? 99 : ia;
         const orderB = ib === -1 ? 99 : ib;
-        if (orderA !== orderB) return orderA - orderB;
-        // 同じイベントコード → 時刻昇順
-        const timeA = new Date(a.scheduled_at || a.actual_at || "9999").getTime();
-        const timeB = new Date(b.scheduled_at || b.actual_at || "9999").getTime();
-        return timeA - timeB;
+        if (orderA !== orderB) return orderB - orderA;
+        // 同じイベントコード → 時刻降順
+        const timeA = new Date(a.scheduled_at || a.actual_at || "0000").getTime();
+        const timeB = new Date(b.scheduled_at || b.actual_at || "0000").getTime();
+        return timeB - timeA;
       });
 
       if (milestones.length === 0) {
