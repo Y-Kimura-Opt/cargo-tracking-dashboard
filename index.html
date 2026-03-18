@@ -367,27 +367,30 @@
         return true;
       });
 
-      // Sort: 乗り継ぎ対応 - 各 milestone にスコアを付与して降順（最新が上）
-      // DEP/ARR はフライトの scheduled 時刻でスコア化、それ以外は EVENT_ORDER
-      // スコア: EVENT_ORDER 位置 × 1000 + フライト時刻（分）で乗り継ぎの順序を正しく表現
-      const flightTimeScore = (m) => {
+      // Sort: EVENT_ORDER 降順（最新が上）を基本とし、
+      // DEP/ARR が複数ある場合（乗り継ぎ）はレグ単位で正しく並べる
+      //
+      // 方針: 各 milestone にソートキーを割り当て
+      // - 時刻なし: EVENT_ORDER のインデックス × 10000（固定位置）
+      // - 時刻あり: タイムスタンプ（DEP/ARR の乗り継ぎ順を正しく反映）
+      // → 全体を降順ソート
+      const getSortKey = (m) => {
         const t = m.scheduled_at || m.actual_at;
-        return t ? new Date(t).getTime() : 0;
+        if (t) {
+          return new Date(t).getTime();
+        }
+        // 時刻なし: EVENT_ORDER 位置で固定スコア
+        // TTA(5) < DEP(6) < ARR(7) < ICC(8) < DLV(10) のように
+        // DEP/ARR の時刻範囲に被らないよう十分大きな基準値を使う
+        const idx = EVENT_ORDER.indexOf(m.event_code);
+        const order = idx === -1 ? 99 : idx;
+        // EVENT_ORDER: PUP=0,AWB=1,ECC=2,TTA=3,BKD=4,RCS=5,DEP=6,ARR=7,ICC=8,RSA=9,DLV=10
+        // TTAなど前半(<=5)は最も古いDEP時刻より前、ICC/DLVなど後半(>=8)は最も新しいARR時刻より後
+        if (order <= 5) return 0 + order;         // 前半: 小さいスコア（下に配置）
+        return Date.now() + order * 86400000;      // 後半: 大きいスコア（上に配置）
       };
 
-      milestones.sort((a, b) => {
-        const scoreA = flightTimeScore(a);
-        const scoreB = flightTimeScore(b);
-        // 両方時刻がある → 時刻降順（最新が上）
-        if (scoreA && scoreB) return scoreB - scoreA;
-        // 片方だけ時刻がある → 時刻ありが上
-        if (scoreA && !scoreB) return -1;
-        if (!scoreA && scoreB) return 1;
-        // 両方時刻なし → EVENT_ORDER 降順
-        const ia = EVENT_ORDER.indexOf(a.event_code);
-        const ib = EVENT_ORDER.indexOf(b.event_code);
-        return (ib === -1 ? 99 : ib) - (ia === -1 ? 99 : ia);
-      });
+      milestones.sort((a, b) => getSortKey(b) - getSortKey(a));
 
       if (milestones.length === 0) {
         document.getElementById("tabTimeline").innerHTML = '<div class="loading">マイルストーンなし</div>';
