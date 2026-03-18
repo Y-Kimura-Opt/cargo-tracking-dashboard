@@ -367,30 +367,20 @@
         return true;
       });
 
-      // Sort: EVENT_ORDER 降順（最新が上）を基本とし、
-      // DEP/ARR が複数ある場合（乗り継ぎ）はレグ単位で正しく並べる
-      //
-      // 方針: 各 milestone にソートキーを割り当て
-      // - 時刻なし: EVENT_ORDER のインデックス × 10000（固定位置）
-      // - 時刻あり: タイムスタンプ（DEP/ARR の乗り継ぎ順を正しく反映）
-      // → 全体を降順ソート
-      const getSortKey = (m) => {
-        const t = m.scheduled_at || m.actual_at;
-        if (t) {
-          return new Date(t).getTime();
-        }
-        // 時刻なし: EVENT_ORDER 位置で固定スコア
-        // TTA(5) < DEP(6) < ARR(7) < ICC(8) < DLV(10) のように
-        // DEP/ARR の時刻範囲に被らないよう十分大きな基準値を使う
-        const idx = EVENT_ORDER.indexOf(m.event_code);
-        const order = idx === -1 ? 99 : idx;
-        // EVENT_ORDER: PUP=0,AWB=1,ECC=2,TTA=3,BKD=4,RCS=5,DEP=6,ARR=7,ICC=8,RSA=9,DLV=10
-        // TTAなど前半(<=5)は最も古いDEP時刻より前、ICC/DLVなど後半(>=8)は最も新しいARR時刻より後
-        if (order <= 5) return 0 + order;         // 前半: 小さいスコア（下に配置）
-        return Date.now() + order * 86400000;      // 後半: 大きいスコア（上に配置）
-      };
-
-      milestones.sort((a, b) => getSortKey(b) - getSortKey(a));
+      // Sort: EVENT_ORDER 降順（最新ステップが上）
+      // 同じ EVENT_ORDER 位置（DEP同士、ARR同士）は時刻降順（乗り継ぎ対応）
+      milestones.sort((a, b) => {
+        const ia = EVENT_ORDER.indexOf(a.event_code);
+        const ib = EVENT_ORDER.indexOf(b.event_code);
+        const orderA = ia === -1 ? 99 : ia;
+        const orderB = ib === -1 ? 99 : ib;
+        if (orderA !== orderB) return orderB - orderA;
+        // 同じイベントコード → 時刻降順（新しいレグが上）
+        const timeA = new Date(a.scheduled_at || a.actual_at || "0000").getTime();
+        const timeB = new Date(b.scheduled_at || b.actual_at || "0000").getTime();
+        if (timeA !== timeB) return timeB - timeA;
+        return 0;
+      });
 
       if (milestones.length === 0) {
         document.getElementById("tabTimeline").innerHTML = '<div class="loading">マイルストーンなし</div>';
