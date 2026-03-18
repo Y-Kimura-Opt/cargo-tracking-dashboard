@@ -367,18 +367,26 @@
         return true;
       });
 
-      // Sort: EVENT_ORDER の逆順（最新イベントが上）
-      // 同じイベントコード内は時刻の新しい順
+      // Sort: 乗り継ぎ対応 - 各 milestone にスコアを付与して降順（最新が上）
+      // DEP/ARR はフライトの scheduled 時刻でスコア化、それ以外は EVENT_ORDER
+      // スコア: EVENT_ORDER 位置 × 1000 + フライト時刻（分）で乗り継ぎの順序を正しく表現
+      const flightTimeScore = (m) => {
+        const t = m.scheduled_at || m.actual_at;
+        return t ? new Date(t).getTime() : 0;
+      };
+
       milestones.sort((a, b) => {
+        const scoreA = flightTimeScore(a);
+        const scoreB = flightTimeScore(b);
+        // 両方時刻がある → 時刻降順（最新が上）
+        if (scoreA && scoreB) return scoreB - scoreA;
+        // 片方だけ時刻がある → 時刻ありが上
+        if (scoreA && !scoreB) return -1;
+        if (!scoreA && scoreB) return 1;
+        // 両方時刻なし → EVENT_ORDER 降順
         const ia = EVENT_ORDER.indexOf(a.event_code);
         const ib = EVENT_ORDER.indexOf(b.event_code);
-        const orderA = ia === -1 ? 99 : ia;
-        const orderB = ib === -1 ? 99 : ib;
-        if (orderA !== orderB) return orderB - orderA;
-        // 同じイベントコード → 時刻降順
-        const timeA = new Date(a.scheduled_at || a.actual_at || "0000").getTime();
-        const timeB = new Date(b.scheduled_at || b.actual_at || "0000").getTime();
-        return timeB - timeA;
+        return (ib === -1 ? 99 : ib) - (ia === -1 ? 99 : ia);
       });
 
       if (milestones.length === 0) {
@@ -390,13 +398,18 @@
       const flightMap = {};
       (flights || []).forEach(f => { flightMap[f.flight_number] = f; });
 
-      // Find the latest completed event index
-      let lastCompletedIdx = -1;
-      milestones.forEach((m, i) => { if (m.actual_at) lastCompletedIdx = i; });
+      // completed = actual_at あり, active = 次に完了予定のイベント, pending = それ以外
+      // 降順表示なので、下から見て最初の未完了がactive
+      const firstPendingFromBottom = (() => {
+        for (let i = milestones.length - 1; i >= 0; i--) {
+          if (!milestones[i].actual_at) return i;
+        }
+        return -1;
+      })();
 
       const items = milestones.map((m, i) => {
         const isCompleted = !!m.actual_at;
-        const isActive = !isCompleted && i === lastCompletedIdx + 1;
+        const isActive = !isCompleted && i === firstPendingFromBottom;
         const dotClass = isCompleted ? "completed" : (isActive ? "active" : "pending");
         const icon = EVENT_ICONS[m.event_code] || "●";
 
