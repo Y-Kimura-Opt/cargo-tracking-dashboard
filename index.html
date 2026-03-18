@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cargo Tracking Dashboard - Optec Express</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+    /* Header */
+    .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header-right { display: flex; gap: 12px; align-items: center; }
+    .header-right span { font-size: 13px; opacity: 0.7; }
+    .btn-refresh { background: rgba(255,255,255,0.15); border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn-refresh:hover { background: rgba(255,255,255,0.25); }
+
+    /* Layout */
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+    /* Stats Bar */
+    .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: white; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .label { font-size: 12px; color: #666; margin-top: 4px; }
+    .stat-card.active .value { color: #2563eb; }
+    .stat-card.delivered .value { color: #16a34a; }
+    .stat-card.transit .value { color: #ea580c; }
+
+    /* AWB Table */
+    .panel { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px; overflow: hidden; }
+    .panel-header { padding: 16px 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
+    .panel-header h2 { font-size: 15px; font-weight: 600; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8f9fa; padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+    td { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+    tr:hover { background: #f8faff; }
+    tr.selected { background: #eff6ff; }
+    tr { cursor: pointer; }
+
+    /* Status Badge */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .badge-registered { background: #e0e7ff; color: #3730a3; }
+    .badge-picked_up { background: #fef3c7; color: #92400e; }
+    .badge-at_warehouse { background: #fef3c7; color: #92400e; }
+    .badge-export_cleared { background: #dbeafe; color: #1e40af; }
+    .badge-tendered { background: #e0e7ff; color: #4338ca; }
+    .badge-in_transit { background: #fed7aa; color: #c2410c; }
+    .badge-arrived { background: #bbf7d0; color: #15803d; }
+    .badge-import_cleared { background: #a7f3d0; color: #065f46; }
+    .badge-recovered { background: #a7f3d0; color: #065f46; }
+    .badge-delivered { background: #bbf7d0; color: #166534; }
+    .badge-cancelled { background: #fecaca; color: #991b1b; }
+
+    /* Source Badge */
+    .source-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+    .source-cargoai { background: #dbeafe; color: #1e40af; }
+    .source-kintone { background: #fef3c7; color: #92400e; }
+    .source-manual { background: #e5e7eb; color: #374151; }
+    .source-api待ち { background: #f3e8ff; color: #7c3aed; }
+    .source-flightaware { background: #dcfce7; color: #166534; }
+
+    /* Timeline */
+    .detail-panel { display: none; }
+    .detail-panel.visible { display: block; }
+    .detail-header { padding: 16px 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
+    .detail-header h2 { font-size: 15px; }
+    .btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #666; padding: 4px 8px; }
+    .btn-close:hover { color: #333; }
+
+    .awb-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; background: #f8f9fa; }
+    .awb-info-item { }
+    .awb-info-item .label { font-size: 11px; color: #888; text-transform: uppercase; }
+    .awb-info-item .value { font-size: 14px; font-weight: 500; margin-top: 2px; }
+
+    /* Timeline */
+    .timeline { padding: 20px; }
+    .timeline-item { display: flex; gap: 16px; padding-bottom: 20px; position: relative; }
+    .timeline-item:last-child { padding-bottom: 0; }
+    .timeline-line { position: absolute; left: 15px; top: 32px; bottom: 0; width: 2px; background: #e5e7eb; }
+    .timeline-item:last-child .timeline-line { display: none; }
+    .timeline-dot { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; z-index: 1; }
+    .timeline-dot.completed { background: #16a34a; color: white; }
+    .timeline-dot.pending { background: #e5e7eb; color: #999; }
+    .timeline-dot.active { background: #2563eb; color: white; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0.3); } 50% { box-shadow: 0 0 0 8px rgba(37,99,235,0); } }
+
+    .timeline-content { flex: 1; min-width: 0; }
+    .timeline-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .timeline-meta { font-size: 12px; color: #888; margin-top: 4px; display: flex; gap: 16px; flex-wrap: wrap; }
+    .timeline-meta span { display: flex; align-items: center; gap: 4px; }
+    .timeline-remarks { font-size: 12px; color: #666; margin-top: 4px; font-style: italic; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; }
+    /* Stats Panel */
+    .stats-panel-tabs { display: flex; gap: 0; border-bottom: 1px solid #e5e7eb; padding: 0 20px; }
+    .stats-panel-tab { padding: 10px 16px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; color: #666; }
+    .stats-panel-tab.active { color: #1a1a2e; border-bottom-color: #2563eb; }
+    .stats-panel-tab:hover { color: #333; }
+    .stats-content { padding: 20px; }
+
+    .capability-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .capability-table th { background: #f0f2f5; padding: 8px 12px; text-align: center; font-weight: 600; color: #555; border: 1px solid #e5e7eb; }
+    .capability-table td { padding: 6px 12px; text-align: center; border: 1px solid #e5e7eb; }
+    .capability-table tr:hover { background: #f8faff; }
+    .capability-table .airline-name { text-align: left; font-weight: 600; }
+    .cap-yes { color: #16a34a; font-weight: 600; }
+    .cap-no { color: #dc2626; }
+    .cap-partial { color: #d97706; }
+    .delay-cell { font-family: monospace; }
+    .delay-fast { background: #f0fdf4; color: #16a34a; }
+    .delay-medium { background: #fffbeb; color: #d97706; }
+    .delay-slow { background: #fef2f2; color: #dc2626; }
+
+    .timing-analysis { margin-top: 6px; background: #fef9ee; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+    .timing-analysis .timing-title { font-weight: 600; font-size: 11px; color: #92400e; margin-bottom: 4px; }
+    .timing-row { display: flex; justify-content: space-between; padding: 2px 0; }
+    .timing-label { color: #666; }
+    .timing-value { font-weight: 600; font-family: monospace; }
+    .timing-value.fast { color: #16a34a; }
+    .timing-value.slow { color: #dc2626; }
+    .timing-value.medium { color: #d97706; }
+
+    /* Flights */
+    .flights-section { padding: 0 20px 20px; }
+    .flights-section h3 { font-size: 13px; font-weight: 600; color: #666; margin-bottom: 10px; text-transform: uppercase; }
+    .flight-card { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .flight-route { font-size: 14px; font-weight: 600; }
+    .flight-times { font-size: 12px; color: #666; }
+    .flight-status { font-size: 11px; }
+
+    /* Event Log */
+    .log-table td { font-size: 12px; padding: 6px 12px; }
+    .log-table .timestamp { color: #888; white-space: nowrap; }
+    .log-table .level-error { color: #dc2626; font-weight: 600; }
+    .log-table .level-warn { color: #d97706; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .container { padding: 12px; }
+      .awb-info { grid-template-columns: 1fr 1fr; }
+      td, th { padding: 8px 10px; }
+    }
+
+    .loading { text-align: center; padding: 40px; color: #888; }
+    .tab-bar { display: flex; gap: 0; border-bottom: 1px solid #e5e7eb; }
+    .tab { padding: 10px 20px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; color: #666; }
+    .tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .tab:hover { color: #333; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✈️ Cargo Tracking Dashboard</h1>
+    <div class="header-right">
+      <span id="lastUpdate"></span>
+      <button class="btn-refresh" onclick="loadAll()">↻ 更新</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats-bar" id="statsBar"></div>
+
+    <!-- AWB Table -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2>AWB 一覧</h2>
+      </div>
+      <div id="awbTable"><div class="loading">読み込み中...</div></div>
+    </div>
+
+    <!-- Airline Stats Panel -->
+    <div class="panel" id="airlineStatsPanel">
+      <div class="panel-header">
+        <h2>📊 エアライン別統計</h2>
+      </div>
+      <div class="stats-panel-tabs">
+        <div class="stats-panel-tab active" data-stab="capability" onclick="switchStatsTab('capability')">データ可用性</div>
+        <div class="stats-panel-tab" data-stab="delay" onclick="switchStatsTab('delay')">遅延分析</div>
+        <div class="stats-panel-tab" data-stab="raw" onclick="switchStatsTab('raw')">生データ</div>
+        <div class="stats-panel-tab" data-stab="costs" onclick="switchStatsTab('costs')">API コスト</div>
+        <div class="stats-panel-tab" data-stab="polling" onclick="switchStatsTab('polling')">ポーリング状況</div>
+      </div>
+      <div id="statsCapability" class="stats-content"><div class="loading">データ読み込み中...</div></div>
+      <div id="statsDelay" class="stats-content" style="display:none"></div>
+      <div id="statsRaw" class="stats-content" style="display:none"></div>
+      <div id="statsCosts" class="stats-content" style="display:none"></div>
+      <div id="statsPolling" class="stats-content" style="display:none"></div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="panel detail-panel" id="detailPanel">
+      <div class="detail-header">
+        <h2 id="detailTitle">-</h2>
+        <button class="btn-close" onclick="closeDetail()">✕</button>
+      </div>
+      <div class="awb-info" id="awbInfo"></div>
+      <div class="tab-bar">
+        <div class="tab active" data-tab="timeline" onclick="switchTab('timeline')">タイムライン</div>
+        <div class="tab" data-tab="flights" onclick="switchTab('flights')">フライト</div>
+        <div class="tab" data-tab="logs" onclick="switchTab('logs')">ログ</div>
+      </div>
+      <div id="tabTimeline" class="timeline"></div>
+      <div id="tabFlights" class="flights-section" style="display:none"></div>
+      <div id="tabLogs" style="display:none; padding: 0 20px 20px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "https://ggdxaqexlmwhjynwsnet.supabase.co/functions/v1/query-data";
+
+    // ============================================
+    // Data Fetching
+    // ============================================
+    async function fetchData(table, awbId = null, limit = 50) {
+      let url = `${API_BASE}?table=${table}&limit=${limit}`;
+      if (awbId) url += `&awb_id=${awbId}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return data.data || [];
+    }
+
+    // ============================================
+    // Load All
+    // ============================================
+    let allAwbs = [];
+    async function loadAll() {
+      document.getElementById("lastUpdate").textContent = "更新中...";
+      const [awbs, airlineEvents, apiCosts, pollSchedules, faAlerts] = await Promise.all([
+        fetchData("awb_master", null, 100),
+        fetchData("airline_event_log", null, 500),
+        fetchData("api_costs", null, 500),
+        fetchData("poll_schedule", null, 100),
+        fetchData("flightaware_alerts", null, 100),
+      ]);
+      allAwbs = awbs;
+      renderStats(allAwbs);
+      renderAwbTable(allAwbs);
+      renderAirlineStats(airlineEvents);
+      renderApiCosts(apiCosts);
+      renderPollingStatus(pollSchedules, faAlerts);
+      document.getElementById("lastUpdate").textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}`;
+    }
+
+    // ============================================
+    // Stats
+    // ============================================
+    function renderStats(awbs) {
+      const counts = {};
+      awbs.forEach(a => { counts[a.status] = (counts[a.status] || 0) + 1; });
+      const total = awbs.length;
+      const delivered = counts.DELIVERED || 0;
+      const inTransit = counts.IN_TRANSIT || 0;
+      const active = total - delivered - (counts.CANCELLED || 0);
+
+      document.getElementById("statsBar").innerHTML = `
+        <div class="stat-card"><div class="value">${total}</div><div class="label">全案件</div></div>
+        <div class="stat-card active"><div class="value">${active}</div><div class="label">進行中</div></div>
+        <div class="stat-card transit"><div class="value">${inTransit}</div><div class="label">輸送中</div></div>
+        <div class="stat-card delivered"><div class="value">${delivered}</div><div class="label">完了</div></div>
+      `;
+    }
+
+    // ============================================
+    // AWB Table
+    // ============================================
+    function renderAwbTable(awbs) {
+      if (awbs.length === 0) {
+        document.getElementById("awbTable").innerHTML = '<div class="loading">AWB データなし</div>';
+        return;
+      }
+
+      const rows = awbs.map(a => {
+        const route = a.route || `${a.origin || "?"}→${a.destination || "?"}`;
+        return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
+          <td><strong>${a.awb_display || a.awb_id}</strong></td>
+          <td>${route}</td>
+          <td>${a.total_pieces} pcs / ${a.total_weight} kg</td>
+          <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
+          <td>${a.case_number || '-'}</td>
+          <td>${formatDateShort(a.updated_at)}</td>
+        </tr>`;
+      }).join("");
+
+      document.getElementById("awbTable").innerHTML = `
+        <table>
+          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>案件番号</th><th>最終更新</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    // ============================================
+    // Detail Panel
+    // ============================================
+    let currentAwbId = null;
+    async function selectAwb(awbId) {
+      currentAwbId = awbId;
+
+      // Highlight row
+      document.querySelectorAll("tr.selected").forEach(r => r.classList.remove("selected"));
+      const row = document.getElementById(`row-${awbId}`);
+      if (row) row.classList.add("selected");
+
+      const panel = document.getElementById("detailPanel");
+      panel.classList.add("visible");
+
+      const awb = allAwbs.find(a => a.awb_id === awbId);
+      if (!awb) return;
+
+      document.getElementById("detailTitle").textContent = `${awb.awb_display} — ${awb.origin || "?"}→${awb.destination || "?"}`;
+
+      // AWB Info
+      document.getElementById("awbInfo").innerHTML = `
+        <div class="awb-info-item"><div class="label">ステータス</div><div class="value"><span class="badge badge-${awb.status.toLowerCase()}">${formatStatus(awb.status)}</span></div></div>
+        <div class="awb-info-item"><div class="label">ルート</div><div class="value">${awb.route || `${awb.origin || "?"}→${awb.destination || "?"}`}</div></div>
+        <div class="awb-info-item"><div class="label">個数 / 重量</div><div class="value">${awb.total_pieces} pcs / ${awb.total_weight} kg</div></div>
+        <div class="awb-info-item"><div class="label">配送タイプ</div><div class="value">${awb.delivery_type || "-"}</div></div>
+        <div class="awb-info-item"><div class="label">CO₂</div><div class="value">${awb.carbon_emission ? awb.carbon_emission + " kg" : "-"}</div></div>
+        <div class="awb-info-item"><div class="label">距離</div><div class="value">${awb.total_distance ? awb.total_distance + " km" : "-"}</div></div>
+      `;
+
+      // Load milestones, flights, logs in parallel
+      const [milestones, flights, logs] = await Promise.all([
+        fetchData("milestones", awbId, 50),
+        fetchData("flights", awbId, 20),
+        fetchData("event_log", awbId, 30),
+      ]);
+
+      renderTimeline(milestones, awb.status, flights);
+      renderFlights(flights);
+      renderLogs(logs);
+      switchTab("timeline");
+    }
+
+    function closeDetail() {
+      document.getElementById("detailPanel").classList.remove("visible");
+      document.querySelectorAll("tr.selected").forEach(r => r.classList.remove("selected"));
+      currentAwbId = null;
+    }
+
+    // ============================================
+    // Timeline
+    // ============================================
+    const EVENT_ORDER = ["PUP", "AWB", "ECC", "TTA", "BKD", "RCS", "DEP", "ARR", "ICC", "RSA", "DLV"];
+    const EVENT_ICONS = {
+      PUP: "📦", AWB: "🏭", ECC: "📋", TTA: "✈️", BKD: "📝",
+      RCS: "📥", DEP: "🛫", ARR: "🛬", ICC: "📋", RSA: "🚛", DLV: "✅"
+    };
+    const EVENT_LABELS = {
+      PUP: "集荷", AWB: "倉庫搬入", ECC: "輸出通関", TTA: "貨物引渡",
+      BKD: "予約確認", RCS: "貨物受領", DEP: "出発", ARR: "到着",
+      ICC: "輸入通関", RSA: "貨物引取", DLV: "納品"
+    };
+
+    function renderTimeline(milestones, status, flights) {
+      // BKD はタイムラインに表示しない（内部データのみ、通知対象外）
+      milestones = milestones.filter(m => m.event_code !== "BKD");
+
+      // DEP/ARR: CargoAI 版がある場合、Kintone 版（API待ち）を非表示
+      const apiSourceCodes = new Set(milestones.filter(m => m.source === "CARGOAI" || m.source === "FLIGHTAWARE").map(m => m.event_code));
+      milestones = milestones.filter(m => {
+        if ((m.event_code === "DEP" || m.event_code === "ARR") && m.source === "KINTONE" && apiSourceCodes.has(m.event_code)) {
+          return false;
+        }
+        return true;
+      });
+
+      // Sort by event order
+      milestones.sort((a, b) => {
+        const ia = EVENT_ORDER.indexOf(a.event_code);
+        const ib = EVENT_ORDER.indexOf(b.event_code);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+
+      if (milestones.length === 0) {
+        document.getElementById("tabTimeline").innerHTML = '<div class="loading">マイルストーンなし</div>';
+        return;
+      }
+
+      // Build flight lookup by flight_number for DEP/ARR time overlay
+      const flightMap = {};
+      (flights || []).forEach(f => { flightMap[f.flight_number] = f; });
+
+      // Find the latest completed event index
+      let lastCompletedIdx = -1;
+      milestones.forEach((m, i) => { if (m.actual_at) lastCompletedIdx = i; });
+
+      const items = milestones.map((m, i) => {
+        const isCompleted = !!m.actual_at;
+        const isActive = !isCompleted && i === lastCompletedIdx + 1;
+        const dotClass = isCompleted ? "completed" : (isActive ? "active" : "pending");
+        const icon = EVENT_ICONS[m.event_code] || "●";
+
+        // DEP/ARR: フライトテーブルのデータを優先（CargoAI が正）
+        let displayScheduled = m.scheduled_at;
+        let displayActual = m.actual_at;
+        let flightOverride = false;
+        // flight_number があればそれでマッチ、なければ最初のフライトを使用
+        const matchedFlight = m.flight_number
+          ? flightMap[m.flight_number]
+          : ((m.event_code === "DEP" || m.event_code === "ARR") && flights && flights.length > 0
+            ? flights.sort((a, b) => a.sequence - b.sequence)[0]
+            : null);
+
+        if (m.event_code === "DEP" && matchedFlight) {
+          if (matchedFlight.scheduled_departure) { displayScheduled = matchedFlight.scheduled_departure; flightOverride = true; }
+          if (matchedFlight.actual_departure) { displayActual = matchedFlight.actual_departure; flightOverride = true; }
+        } else if (m.event_code === "ARR" && matchedFlight) {
+          if (matchedFlight.scheduled_arrival) { displayScheduled = matchedFlight.scheduled_arrival; flightOverride = true; }
+          if (matchedFlight.actual_arrival) { displayActual = matchedFlight.actual_arrival; flightOverride = true; }
+        }
+
+        // DEP/ARR の現地時間表示用に空港コードを決定
+        let depAirport = null, arrAirport = null;
+        if (matchedFlight) { depAirport = matchedFlight.origin; arrAirport = matchedFlight.destination; }
+        else if (m.location_code) { depAirport = m.location_code; arrAirport = m.location_code; }
+        const timeAirport = m.event_code === "DEP" ? depAirport : (m.event_code === "ARR" ? arrAirport : null);
+
+        let meta = [];
+        if (displayScheduled) meta.push(`<span>📅 予定: ${timeAirport ? formatLocalTime(displayScheduled, timeAirport) : formatDateTime(displayScheduled)}${flightOverride ? " (Flight)" : ""}</span>`);
+        if (displayActual) meta.push(`<span>✅ 実績: ${timeAirport ? formatLocalTime(displayActual, timeAirport) : formatDateTime(displayActual)}${flightOverride && displayActual !== m.actual_at ? " (Flight)" : ""}</span>`);
+        const displayFlightNo = m.flight_number || (matchedFlight ? matchedFlight.flight_number : "");
+        if (displayFlightNo) meta.push(`<span>✈️ ${displayFlightNo}</span>`);
+        if (m.location_code) meta.push(`<span>📍 ${m.location_code}</span>`);
+        if (m.uld) meta.push(`<span>📦 ULD: ${m.uld}</span>`);
+        if (m.pieces) meta.push(`<span>${m.pieces} pcs</span>`);
+        if (m.delay_minutes !== null && m.delay_minutes !== undefined) {
+          const sign = m.delay_minutes > 0 ? "+" : "";
+          meta.push(`<span>⏱ ${sign}${m.delay_minutes}min</span>`);
+        }
+
+        // Timing analysis for API events (DEP/ARR) with actual data
+        // DEP/ARR: use flight actual times for more accurate analysis
+        let timingHtml = "";
+        if ((m.source === "CARGOAI" || m.source === "FLIGHTAWARE") && m.created_at && (m.event_code === "DEP" || m.event_code === "ARR" || m.event_code === "RCS")) {
+          const timingActual = (m.event_code === "DEP" || m.event_code === "ARR") && matchedFlight
+            ? (m.event_code === "DEP" ? (matchedFlight.actual_departure || m.actual_at) : (matchedFlight.actual_arrival || m.actual_at))
+            : m.actual_at;
+          const timingScheduled = (m.event_code === "DEP" || m.event_code === "ARR") && matchedFlight
+            ? (m.event_code === "DEP" ? matchedFlight.scheduled_departure : matchedFlight.scheduled_arrival)
+            : m.scheduled_at;
+          if (timingActual) {
+            timingHtml = buildTimingAnalysis({ ...m, actual_at: timingActual, scheduled_at: timingScheduled || m.scheduled_at });
+          }
+        }
+
+        return `
+          <div class="timeline-item">
+            <div class="timeline-dot ${dotClass}">${isCompleted ? "✓" : icon}</div>
+            <div class="timeline-line"></div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                ${EVENT_LABELS[m.event_code] || m.event_code}
+                <span class="source-badge source-${getDisplaySource(m).toLowerCase()}">${getDisplaySource(m)}</span>
+              </div>
+              <div class="timeline-meta">${meta.join("")}</div>
+              ${m.location_name ? `<div class="timeline-meta"><span>📍 ${m.location_name}</span></div>` : ""}
+              ${m.remarks ? `<div class="timeline-remarks">${m.remarks}</div>` : ""}
+              ${timingHtml}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("tabTimeline").innerHTML = `<div class="timeline">${items}</div>`;
+    }
+
+    // ============================================
+    // Flights
+    // ============================================
+    function renderFlights(flights) {
+      if (flights.length === 0) {
+        document.getElementById("tabFlights").innerHTML = '<div class="loading">フライトデータなし</div>';
+        return;
+      }
+
+      flights.sort((a, b) => a.sequence - b.sequence);
+
+      const cards = flights.map(f => {
+        const dep = f.actual_departure ? `ATD: ${formatLocalTime(f.actual_departure, f.origin)}` : (f.scheduled_departure ? `STD: ${formatLocalTime(f.scheduled_departure, f.origin)}` : "");
+        const arr = f.actual_arrival ? `ATA: ${formatLocalTime(f.actual_arrival, f.destination)}` : (f.scheduled_arrival ? `STA: ${formatLocalTime(f.scheduled_arrival, f.destination)}` : "");
+        const co2 = f.co2_kg ? `CO₂: ${f.co2_kg}kg` : "";
+        const dist = f.distance_km ? `${f.distance_km}km` : "";
+
+        return `
+          <div class="flight-card">
+            <div>
+              <div class="flight-route">${f.flight_number} — ${f.origin}→${f.destination}</div>
+              <div class="flight-times">${[dep, arr, dist, co2].filter(Boolean).join(" | ")}</div>
+            </div>
+            <span class="badge badge-${f.status === 'ARRIVED' ? 'delivered' : f.status === 'DEPARTED' ? 'in_transit' : 'registered'}">${f.status}</span>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("tabFlights").innerHTML = `<h3>フライト情報</h3>${cards}`;
+    }
+
+    // ============================================
+    // Logs
+    // ============================================
+    function renderLogs(logs) {
+      if (logs.length === 0) {
+        document.getElementById("tabLogs").innerHTML = '<div class="loading">ログなし</div>';
+        return;
+      }
+
+      const rows = logs.map(l => {
+        const levelClass = l.level === "ERROR" ? "level-error" : (l.level === "WARN" ? "level-warn" : "");
+        return `<tr>
+          <td class="timestamp">${formatDateTime(l.timestamp)}</td>
+          <td class="${levelClass}">${l.level}</td>
+          <td>${l.source}</td>
+          <td>${l.message}</td>
+        </tr>`;
+      }).join("");
+
+      document.getElementById("tabLogs").innerHTML = `
+        <table class="log-table">
+          <thead><tr><th>日時</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    // ============================================
+    // Tab Switching
+    // ============================================
+    function switchTab(tab) {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelector(`[data-tab="${tab}"]`).classList.add("active");
+      document.getElementById("tabTimeline").style.display = tab === "timeline" ? "block" : "none";
+      document.getElementById("tabFlights").style.display = tab === "flights" ? "block" : "none";
+      document.getElementById("tabLogs").style.display = tab === "logs" ? "block" : "none";
+    }
+
+    // ============================================
+    // Helpers
+    // ============================================
+    // ============================================
+    // Timing Analysis（遅延分析）
+    // ============================================
+    function buildTimingAnalysis(m) {
+      const eventTime = new Date(m.actual_at).getTime();     // T2: CargoAI eventDate（イベント発生時刻）
+      const webhookTime = new Date(m.created_at).getTime();  // T3: Webhook 受信時刻
+
+      if (isNaN(eventTime) || isNaN(webhookTime)) return "";
+
+      // T2 → T3: eventDate から Webhook 受信までの遅延
+      const delayMs = webhookTime - eventTime;
+      const delayMin = Math.round(delayMs / 60000);
+
+      let rows = [];
+
+      // イベント発生時刻
+      rows.push(`<div class="timing-row"><span class="timing-label">イベント発生 (eventDate)</span><span class="timing-value">${formatDateTime(m.actual_at)}</span></div>`);
+
+      // Webhook 受信時刻
+      rows.push(`<div class="timing-row"><span class="timing-label">Webhook 受信</span><span class="timing-value">${formatDateTime(m.created_at)}</span></div>`);
+
+      // 遅延
+      const delayClass = delayMin <= 5 ? "fast" : (delayMin <= 30 ? "medium" : "slow");
+      const delayText = delayMin < 60 ? `${delayMin}分` : `${Math.floor(delayMin / 60)}時間${delayMin % 60}分`;
+      rows.push(`<div class="timing-row"><span class="timing-label">通知遅延</span><span class="timing-value ${delayClass}">${delayText}</span></div>`);
+
+      // 予定 vs 実績の差（もしあれば）
+      if (m.scheduled_at) {
+        const schedTime = new Date(m.scheduled_at).getTime();
+        if (!isNaN(schedTime)) {
+          const schedDiffMin = Math.round((eventTime - schedTime) / 60000);
+          const schedSign = schedDiffMin >= 0 ? "+" : "";
+          const schedClass = Math.abs(schedDiffMin) <= 15 ? "fast" : (Math.abs(schedDiffMin) <= 60 ? "medium" : "slow");
+          const schedText = Math.abs(schedDiffMin) < 60
+            ? `${schedSign}${schedDiffMin}分`
+            : `${schedSign}${Math.floor(schedDiffMin / 60)}時間${Math.abs(schedDiffMin) % 60}分`;
+          rows.push(`<div class="timing-row"><span class="timing-label">予定との差</span><span class="timing-value ${schedClass}">${schedText}</span></div>`);
+        }
+      }
+
+      return `<div class="timing-analysis"><div class="timing-title">⏱ タイミング分析</div>${rows.join("")}</div>`;
+    }
+
+    // DEP/ARR は CargoAI が正。Kintone から予定として作成されたものは "API待ち" と表示
+    function getDisplaySource(m) {
+      if (m.source === "FLIGHTAWARE") return "FLIGHTAWARE";
+      if ((m.event_code === "DEP" || m.event_code === "ARR") && m.source === "KINTONE") {
+        return m.actual_at ? "CARGOAI" : "API待ち";
+      }
+      return m.source;
+    }
+
+    function formatStatus(status) {
+      const map = {
+        REGISTERED: "登録済", PICKED_UP: "集荷完了", AT_WAREHOUSE: "倉庫搬入",
+        EXPORT_CLEARED: "輸出通関済", TENDERED: "航空会社引渡", IN_TRANSIT: "輸送中",
+        ARRIVED: "到着", IMPORT_CLEARED: "輸入通関済", RECOVERED: "貨物引取",
+        DELIVERED: "納品完了", CANCELLED: "キャンセル", SPLIT: "分割"
+      };
+      return map[status] || status;
+    }
+
+    // ============================================
+    // IATA 空港コード → タイムゾーン マッピング
+    // ============================================
+    const AIRPORT_TZ = {
+      // 日本 (UTC+9)
+      NRT: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      HND: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      KIX: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      NGO: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      FUK: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      CTS: { offset: 9, tz: "Asia/Tokyo", label: "JST" },
+      // 中国 (UTC+8)
+      PVG: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      SHA: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      PEK: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      PKX: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      CAN: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      SZX: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      CKG: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      CTU: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      XIY: { offset: 8, tz: "Asia/Shanghai", label: "CST" },
+      HKG: { offset: 8, tz: "Asia/Hong_Kong", label: "HKT" },
+      TPE: { offset: 8, tz: "Asia/Taipei", label: "CST" },
+      // 韓国 (UTC+9)
+      ICN: { offset: 9, tz: "Asia/Seoul", label: "KST" },
+      GMP: { offset: 9, tz: "Asia/Seoul", label: "KST" },
+      // 東南アジア
+      BKK: { offset: 7, tz: "Asia/Bangkok", label: "ICT" },
+      SGN: { offset: 7, tz: "Asia/Ho_Chi_Minh", label: "ICT" },
+      HAN: { offset: 7, tz: "Asia/Ho_Chi_Minh", label: "ICT" },
+      SIN: { offset: 8, tz: "Asia/Singapore", label: "SGT" },
+      KUL: { offset: 8, tz: "Asia/Kuala_Lumpur", label: "MYT" },
+      MNL: { offset: 8, tz: "Asia/Manila", label: "PHT" },
+      CGK: { offset: 7, tz: "Asia/Jakarta", label: "WIB" },
+      // 欧州
+      LHR: { offset: 0, tz: "Europe/London", label: "GMT" },
+      CDG: { offset: 1, tz: "Europe/Paris", label: "CET" },
+      FRA: { offset: 1, tz: "Europe/Berlin", label: "CET" },
+      AMS: { offset: 1, tz: "Europe/Amsterdam", label: "CET" },
+      // 北米
+      LAX: { offset: -8, tz: "America/Los_Angeles", label: "PST" },
+      SFO: { offset: -8, tz: "America/Los_Angeles", label: "PST" },
+      JFK: { offset: -5, tz: "America/New_York", label: "EST" },
+      ORD: { offset: -6, tz: "America/Chicago", label: "CST" },
+      // オセアニア
+      SYD: { offset: 11, tz: "Australia/Sydney", label: "AEDT" },
+    };
+
+    // 現地時間フォーマット（空港コード指定）
+    function formatLocalTime(iso, airportCode) {
+      if (!iso) return "-";
+      const tzInfo = airportCode ? AIRPORT_TZ[airportCode] : null;
+      if (tzInfo) {
+        try {
+          const d = new Date(iso);
+          const local = new Date(d.getTime() + tzInfo.offset * 3600000 + d.getTimezoneOffset() * 60000);
+          const m = String(local.getMonth() + 1).padStart(2, "0");
+          const day = String(local.getDate()).padStart(2, "0");
+          const h = String(local.getHours()).padStart(2, "0");
+          const min = String(local.getMinutes()).padStart(2, "0");
+          return `${m}/${day} ${h}:${min} ${tzInfo.label}`;
+        } catch (_) { /* fall through */ }
+      }
+      return formatDateTime(iso);
+    }
+
+    function formatDateTime(iso) {
+      if (!iso) return "-";
+      const d = new Date(iso);
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const h = String(d.getHours()).padStart(2, "0");
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${m}/${day} ${h}:${min} JST`;
+    }
+
+    function formatDateShort(iso) {
+      if (!iso) return "-";
+      const d = new Date(iso);
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const h = String(d.getHours()).padStart(2, "0");
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${m}/${day} ${h}:${min}`;
+    }
+
+    // ============================================
+    // Airline Stats
+    // ============================================
+    function switchStatsTab(tab) {
+      document.querySelectorAll(".stats-panel-tab").forEach(t => t.classList.remove("active"));
+      document.querySelector(`[data-stab="${tab}"]`).classList.add("active");
+      document.getElementById("statsCapability").style.display = tab === "capability" ? "block" : "none";
+      document.getElementById("statsDelay").style.display = tab === "delay" ? "block" : "none";
+      document.getElementById("statsRaw").style.display = tab === "raw" ? "block" : "none";
+      document.getElementById("statsCosts").style.display = tab === "costs" ? "block" : "none";
+      document.getElementById("statsPolling").style.display = tab === "polling" ? "block" : "none";
+    }
+
+    function renderAirlineStats(events) {
+      if (!events || events.length === 0) {
+        document.getElementById("statsCapability").innerHTML = '<div class="loading">統計データなし（Webhook 受信後に蓄積されます）</div>';
+        document.getElementById("statsDelay").innerHTML = '<div class="loading">統計データなし</div>';
+        document.getElementById("statsRaw").innerHTML = '<div class="loading">統計データなし</div>';
+        return;
+      }
+
+      // 集計: airline_code × event_code
+      const stats = {};
+      const allEventCodes = new Set();
+      const allAirlines = new Set();
+
+      for (const e of events) {
+        const key = `${e.airline_code}|${e.event_code}`;
+        allEventCodes.add(e.event_code);
+        allAirlines.add(e.airline_code);
+
+        if (!stats[key]) {
+          stats[key] = {
+            airline: e.airline_code,
+            event: e.event_code,
+            total: 0,
+            withEventDate: 0,
+            withPieces: 0,
+            withWeight: 0,
+            withFlightOrigin: 0,
+            withFlightDest: 0,
+            withActualDep: 0,
+            withActualArr: 0,
+            withSchedDep: 0,
+            withSchedArr: 0,
+            withUld: 0,
+            withDistance: 0,
+            filtered: 0,
+            delays: [],
+            filterReasons: {},
+          };
+        }
+        const s = stats[key];
+        s.total++;
+        if (e.has_event_date) s.withEventDate++;
+        if (e.has_pieces) s.withPieces++;
+        if (e.has_weight) s.withWeight++;
+        if (e.has_flight_origin) s.withFlightOrigin++;
+        if (e.has_flight_destination) s.withFlightDest++;
+        if (e.has_actual_departure) s.withActualDep++;
+        if (e.has_actual_arrival) s.withActualArr++;
+        if (e.has_scheduled_departure) s.withSchedDep++;
+        if (e.has_scheduled_arrival) s.withSchedArr++;
+        if (e.has_uld) s.withUld++;
+        if (e.has_distance) s.withDistance++;
+        if (e.was_filtered) {
+          s.filtered++;
+          const reason = e.filter_reason || "unknown";
+          s.filterReasons[reason] = (s.filterReasons[reason] || 0) + 1;
+        }
+        if (e.delay_minutes !== null && e.delay_minutes !== undefined && e.delay_minutes >= 0) {
+          s.delays.push(e.delay_minutes);
+        }
+      }
+
+      // イベントコード順
+      const eventOrder = ["BKD", "RCS", "DEP", "ARR", "NFD", "DLV", "PRE", "MAN", "RCF", "AWD", "CCD", "TRM"];
+      const sortedEvents = [...allEventCodes].sort((a, b) => {
+        const ia = eventOrder.indexOf(a);
+        const ib = eventOrder.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+      const sortedAirlines = [...allAirlines].sort();
+
+      // ============================================
+      // Tab 1: データ可用性テーブル
+      // ============================================
+      const capFields = [
+        { key: "withEventDate", label: "eventDate" },
+        { key: "withPieces", label: "pieces" },
+        { key: "withWeight", label: "weight" },
+        { key: "withFlightOrigin", label: "flight.origin" },
+        { key: "withFlightDest", label: "flight.dest" },
+        { key: "withSchedDep", label: "sched.dep" },
+        { key: "withSchedArr", label: "sched.arr" },
+        { key: "withActualDep", label: "actual.dep" },
+        { key: "withActualArr", label: "actual.arr" },
+        { key: "withUld", label: "ULD" },
+        { key: "withDistance", label: "distance" },
+      ];
+
+      let capHtml = '<table class="capability-table"><thead><tr><th>Airline</th><th>Event</th><th>受信数</th>';
+      capFields.forEach(f => { capHtml += `<th>${f.label}</th>`; });
+      capHtml += '<th>除外率</th></tr></thead><tbody>';
+
+      for (const airline of sortedAirlines) {
+        for (const evt of sortedEvents) {
+          const s = stats[`${airline}|${evt}`];
+          if (!s) continue;
+
+          capHtml += `<tr><td class="airline-name">${airline}</td><td>${evt}</td><td>${s.total}</td>`;
+          capFields.forEach(f => {
+            const count = s[f.key];
+            const pct = s.total > 0 ? Math.round(count / s.total * 100) : 0;
+            const cls = pct === 100 ? "cap-yes" : (pct > 0 ? "cap-partial" : "cap-no");
+            capHtml += `<td class="${cls}">${pct === 100 ? "✓" : pct === 0 ? "✗" : pct + "%"} <span style="font-size:10px;color:#999">(${count}/${s.total})</span></td>`;
+          });
+          const filterPct = s.total > 0 ? Math.round(s.filtered / s.total * 100) : 0;
+          const filterCls = filterPct === 0 ? "cap-yes" : (filterPct < 50 ? "cap-partial" : "cap-no");
+          capHtml += `<td class="${filterCls}">${filterPct}%</td>`;
+          capHtml += '</tr>';
+        }
+      }
+      capHtml += '</tbody></table>';
+      document.getElementById("statsCapability").innerHTML = capHtml;
+
+      // ============================================
+      // Tab 2: 遅延分析テーブル
+      // ============================================
+      let delayHtml = '<table class="capability-table"><thead><tr><th>Airline</th><th>Event</th><th>データ数</th><th>平均遅延</th><th>最小</th><th>最大</th><th>中央値</th><th>5分以内率</th></tr></thead><tbody>';
+
+      for (const airline of sortedAirlines) {
+        for (const evt of sortedEvents) {
+          const s = stats[`${airline}|${evt}`];
+          if (!s || s.delays.length === 0) continue;
+
+          const sorted = [...s.delays].sort((a, b) => a - b);
+          const avg = Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length);
+          const min = sorted[0];
+          const max = sorted[sorted.length - 1];
+          const median = sorted[Math.floor(sorted.length / 2)];
+          const within5 = sorted.filter(d => d <= 5).length;
+          const within5Pct = Math.round(within5 / sorted.length * 100);
+
+          const avgCls = avg <= 5 ? "delay-fast" : (avg <= 30 ? "delay-medium" : "delay-slow");
+
+          delayHtml += `<tr>
+            <td class="airline-name">${airline}</td>
+            <td>${evt}</td>
+            <td>${sorted.length}</td>
+            <td class="delay-cell ${avgCls}">${formatDelayMin(avg)}</td>
+            <td class="delay-cell">${formatDelayMin(min)}</td>
+            <td class="delay-cell">${formatDelayMin(max)}</td>
+            <td class="delay-cell">${formatDelayMin(median)}</td>
+            <td class="${within5Pct >= 80 ? 'cap-yes' : (within5Pct >= 50 ? 'cap-partial' : 'cap-no')}">${within5Pct}%</td>
+          </tr>`;
+        }
+      }
+      delayHtml += '</tbody></table>';
+      if (!delayHtml.includes('<td')) {
+        delayHtml = '<div class="loading">eventDate のある受信データがまだありません</div>';
+      }
+      document.getElementById("statsDelay").innerHTML = delayHtml;
+
+      // ============================================
+      // Tab 3: 生データテーブル（最新50件）
+      // ============================================
+      const recent = events.slice(0, 50);
+      let rawHtml = '<table class="capability-table"><thead><tr><th>受信日時</th><th>Airline</th><th>Event</th><th>AWB</th><th>便名</th><th>eventDate</th><th>遅延</th><th>除外</th><th>理由</th></tr></thead><tbody>';
+
+      for (const e of recent) {
+        const delayCls = e.delay_minutes === null ? "" : (e.delay_minutes <= 5 ? "delay-fast" : (e.delay_minutes <= 30 ? "delay-medium" : "delay-slow"));
+        rawHtml += `<tr>
+          <td class="timestamp">${formatDateTime(e.webhook_received_at)}</td>
+          <td>${e.airline_code}</td>
+          <td>${e.event_code}</td>
+          <td style="font-family:monospace;font-size:11px">${e.awb_id}</td>
+          <td>${e.flight_number || "-"}</td>
+          <td>${e.event_date ? formatDateTime(e.event_date) : '<span class="cap-no">なし</span>'}</td>
+          <td class="delay-cell ${delayCls}">${e.delay_minutes !== null ? formatDelayMin(e.delay_minutes) : "-"}</td>
+          <td>${e.was_filtered ? '<span class="cap-no">除外</span>' : '<span class="cap-yes">通過</span>'}</td>
+          <td style="font-size:11px">${e.filter_reason || ""}</td>
+        </tr>`;
+      }
+      rawHtml += '</tbody></table>';
+      document.getElementById("statsRaw").innerHTML = rawHtml;
+    }
+
+    function formatDelayMin(min) {
+      if (min === null || min === undefined) return "-";
+      if (min < 60) return `${min}分`;
+      return `${Math.floor(min / 60)}h${min % 60}m`;
+    }
+
+    // ============================================
+    // API Costs
+    // ============================================
+    function renderApiCosts(costs) {
+      if (!costs || costs.length === 0) {
+        document.getElementById("statsCosts").innerHTML = '<div class="loading">API コストデータなし</div>';
+        return;
+      }
+
+      // AWB毎の集計
+      const awbCosts = {};
+      let totalCargoAI = 0;
+      let totalFlightAware = 0;
+
+      for (const c of costs) {
+        const awb = c.awb_id || "UNKNOWN";
+        if (!awbCosts[awb]) awbCosts[awb] = { cargoai: 0, flightaware: 0, calls: 0 };
+        awbCosts[awb].calls++;
+        const cost = parseFloat(c.cost_usd) || 0;
+        if (c.api_provider === "CARGOAI") {
+          awbCosts[awb].cargoai += cost;
+          totalCargoAI += cost;
+        } else {
+          awbCosts[awb].flightaware += cost;
+          totalFlightAware += cost;
+        }
+      }
+
+      const grandTotal = totalCargoAI + totalFlightAware;
+
+      let html = `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+          <div class="stat-card"><div class="value" style="font-size:20px;">$${grandTotal.toFixed(2)}</div><div class="label">合計コスト</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;color:#2563eb;">$${totalCargoAI.toFixed(2)}</div><div class="label">CargoAI</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;color:#16a34a;">$${totalFlightAware.toFixed(2)}</div><div class="label">FlightAware</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;">${costs.length}</div><div class="label">API呼出回数</div></div>
+        </div>
+      `;
+
+      html += '<table class="capability-table"><thead><tr><th>AWB</th><th>CargoAI</th><th>FlightAware</th><th>合計</th><th>呼出回数</th></tr></thead><tbody>';
+      const sortedAwbs = Object.entries(awbCosts).sort((a, b) => (b[1].cargoai + b[1].flightaware) - (a[1].cargoai + a[1].flightaware));
+      for (const [awb, c] of sortedAwbs) {
+        const total = c.cargoai + c.flightaware;
+        html += `<tr>
+          <td style="font-family:monospace">${awb}</td>
+          <td>$${c.cargoai.toFixed(2)}</td>
+          <td>$${c.flightaware.toFixed(2)}</td>
+          <td style="font-weight:600">$${total.toFixed(2)}</td>
+          <td>${c.calls}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+
+      document.getElementById("statsCosts").innerHTML = html;
+    }
+
+    // ============================================
+    // Polling Status
+    // ============================================
+    function renderPollingStatus(schedules, alerts) {
+      let html = '';
+
+      // Polling schedules
+      html += '<h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">ポーリングスケジュール</h3>';
+      if (!schedules || schedules.length === 0) {
+        html += '<div class="loading">アクティブなスケジュールなし</div>';
+      } else {
+        html += '<table class="capability-table"><thead><tr><th>AWB</th><th>タイプ</th><th>ステータス</th><th>試行回数</th><th>次回実行</th><th>フライト</th></tr></thead><tbody>';
+        for (const s of schedules) {
+          const statusCls = s.status === "COMPLETED" ? "cap-yes" : (s.status === "FAILED" ? "cap-no" : "cap-partial");
+          html += `<tr>
+            <td style="font-family:monospace">${s.awb_id}</td>
+            <td>${s.poll_type}</td>
+            <td class="${statusCls}">${s.status}</td>
+            <td>${s.attempt_count}/${s.max_attempts}</td>
+            <td>${s.status === "ACTIVE" ? formatDateTime(s.next_poll_at) : "-"}</td>
+            <td>${s.flight_number || "-"}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+
+      // FlightAware alerts
+      html += '<h3 style="font-size:14px;font-weight:600;margin:20px 0 12px;">FlightAware アラート</h3>';
+      if (!alerts || alerts.length === 0) {
+        html += '<div class="loading">登録済みアラートなし</div>';
+      } else {
+        html += '<table class="capability-table"><thead><tr><th>AWB</th><th>便名</th><th>ICAO</th><th>区間</th><th>ステータス</th><th>DEP通知</th><th>ARR通知</th></tr></thead><tbody>';
+        for (const a of alerts) {
+          const statusCls = a.status === "COMPLETED" ? "cap-yes" : (a.status === "ACTIVE" ? "cap-partial" : "cap-no");
+          html += `<tr>
+            <td style="font-family:monospace">${a.awb_id}</td>
+            <td>${a.flight_number}</td>
+            <td>${a.flight_ident}</td>
+            <td>${a.origin || "?"}→${a.destination || "?"}</td>
+            <td class="${statusCls}">${a.status}</td>
+            <td>${a.dep_triggered_at ? formatDateTime(a.dep_triggered_at) : "-"}</td>
+            <td>${a.arr_triggered_at ? formatDateTime(a.arr_triggered_at) : "-"}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+
+      document.getElementById("statsPolling").innerHTML = html;
+    }
+
+    // ============================================
+    // Auto-refresh every 60 seconds
+    // ============================================
+    loadAll();
+    setInterval(loadAll, 60000);
+  </script>
+</body>
+</html>
