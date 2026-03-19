@@ -378,13 +378,13 @@
     }
 
     async function openValidation(awbId) {
+      // 先にパネル表示+スクロール、データは後から読み込み
+      const panel = document.getElementById("detailPanel");
+      panel.classList.add("visible");
+      switchTab('validation');
+      panel.scrollIntoView({behavior:'smooth',block:'start'});
       await selectAwb(awbId);
       switchTab('validation');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          document.getElementById('detailPanel').scrollIntoView({behavior:'smooth',block:'start'});
-        });
-      });
     }
 
     // ============================================
