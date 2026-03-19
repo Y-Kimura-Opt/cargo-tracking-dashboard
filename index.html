@@ -181,14 +181,12 @@
         <div class="stats-panel-tab" data-stab="raw" onclick="switchStatsTab('raw')">生データ</div>
         <div class="stats-panel-tab" data-stab="costs" onclick="switchStatsTab('costs')">API コスト</div>
         <div class="stats-panel-tab" data-stab="polling" onclick="switchStatsTab('polling')">ポーリング状況</div>
-        <div class="stats-panel-tab" data-stab="emailValidation" onclick="switchStatsTab('emailValidation')">メール検証</div>
       </div>
       <div id="statsCapability" class="stats-content"><div class="loading">データ読み込み中...</div></div>
       <div id="statsDelay" class="stats-content" style="display:none"></div>
       <div id="statsRaw" class="stats-content" style="display:none"></div>
       <div id="statsCosts" class="stats-content" style="display:none"></div>
       <div id="statsPolling" class="stats-content" style="display:none"></div>
-      <div id="statsEmailValidation" class="stats-content" style="display:none"></div>
     </div>
 
     <!-- Detail Panel -->
@@ -202,10 +200,12 @@
         <div class="tab active" data-tab="timeline" onclick="switchTab('timeline')">タイムライン</div>
         <div class="tab" data-tab="flights" onclick="switchTab('flights')">フライト</div>
         <div class="tab" data-tab="logs" onclick="switchTab('logs')">ログ</div>
+        <div class="tab" data-tab="validation" onclick="switchTab('validation')">メール検証</div>
       </div>
       <div id="tabTimeline" class="timeline"></div>
       <div id="tabFlights" class="flights-section" style="display:none"></div>
       <div id="tabLogs" style="display:none; padding: 0 20px 20px;"></div>
+      <div id="tabValidation" style="display:none; padding: 0 20px 20px;"></div>
     </div>
   </div>
 
@@ -247,7 +247,6 @@
       renderAirlineStats(airlineEvents);
       renderApiCosts(apiCosts);
       renderPollingStatus(pollSchedules, faAlerts);
-      renderEmailValidation(emailLogs);
       document.getElementById("lastUpdate").textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}`;
     }
 
@@ -287,11 +286,27 @@
         costByAwb[awb] += parseFloat(c.cost_usd) || 0;
       }
 
+      // AWB毎の最新メール検証ステータスを集計
+      const validationByAwb = {};
+      for (const l of (allEmailLogs || [])) {
+        if (!l.validation_status) continue;
+        const awb = l.awb_id;
+        if (!validationByAwb[awb] || new Date(l.created_at) > new Date(validationByAwb[awb].created_at)) {
+          validationByAwb[awb] = l;
+        }
+      }
+
       const rows = awbs.map(a => {
         const route = a.route || `${a.origin || "?"}→${a.destination || "?"}`;
         const dt = a.delivery_type || '-';
         const cost = costByAwb[a.awb_id] || 0;
         const costStr = cost > 0 ? `$${cost.toFixed(2)}` : '-';
+        const val = validationByAwb[a.awb_id];
+        let valBadge = '<span style="color:#94a3b8;font-size:11px;">-</span>';
+        if (val) {
+          const cls = val.validation_status === "PASS" ? "badge-delivered" : (val.validation_status === "FAIL" ? "badge-cancelled" : "badge-in_transit");
+          valBadge = `<span class="badge ${cls}" style="cursor:pointer" onclick="event.stopPropagation();selectAwb('${a.awb_id}');setTimeout(()=>switchTab('validation'),100)">${val.validation_status}</span>`;
+        }
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
@@ -300,13 +315,14 @@
           <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
           <td>${costStr}</td>
+          <td>${valBadge}</td>
           <td>${formatDateShort(a.updated_at)}</td>
         </tr>`;
       }).join("");
 
       document.getElementById("awbTable").innerHTML = `
         <table>
-          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>API費用</th><th>最終更新</th></tr></thead>
+          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>API費用</th><th>検証</th><th>最終更新</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       `;
@@ -586,6 +602,8 @@
       document.getElementById("tabTimeline").style.display = tab === "timeline" ? "block" : "none";
       document.getElementById("tabFlights").style.display = tab === "flights" ? "block" : "none";
       document.getElementById("tabLogs").style.display = tab === "logs" ? "block" : "none";
+      document.getElementById("tabValidation").style.display = tab === "validation" ? "block" : "none";
+      if (tab === "validation" && currentAwbId) renderAwbValidation(currentAwbId);
     }
 
     // ============================================
@@ -749,7 +767,6 @@
       document.getElementById("statsRaw").style.display = tab === "raw" ? "block" : "none";
       document.getElementById("statsCosts").style.display = tab === "costs" ? "block" : "none";
       document.getElementById("statsPolling").style.display = tab === "polling" ? "block" : "none";
-      document.getElementById("statsEmailValidation").style.display = tab === "emailValidation" ? "block" : "none";
     }
 
     function renderAirlineStats(events) {
@@ -1040,57 +1057,47 @@
     }
 
     // ============================================
-    // Email Validation Tab
+    // AWB Detail: Email Validation Tab
     // ============================================
-    function renderEmailValidation(logs) {
-      if (!logs || logs.length === 0) {
-        document.getElementById("statsEmailValidation").innerHTML = '<div class="loading">メール送信履歴なし</div>';
+    function renderAwbValidation(awbId) {
+      const logs = (allEmailLogs || []).filter(l => l.awb_id === awbId);
+      const container = document.getElementById("tabValidation");
+
+      if (logs.length === 0) {
+        container.innerHTML = '<div class="loading" style="padding:20px">このAWBのメール送信履歴はありません</div>';
         return;
       }
 
-      // 検証結果があるもののみ
-      const validated = logs.filter(l => l.validation_status);
-      const passCount = validated.filter(l => l.validation_status === "PASS").length;
-      const warnCount = validated.filter(l => l.validation_status === "WARN").length;
-      const failCount = validated.filter(l => l.validation_status === "FAIL").length;
-
-      let html = `
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-          <div class="stat-card"><div class="value" style="font-size:20px;">${logs.length}</div><div class="label">送信総数</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;color:#16a34a;">${passCount}</div><div class="label">PASS</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;color:#d97706;">${warnCount}</div><div class="label">WARN</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;color:#dc2626;">${failCount}</div><div class="label">FAIL</div></div>
-        </div>
-      `;
-
-      html += '<table class="capability-table"><thead><tr><th>送信日時</th><th>AWB</th><th>種別</th><th>宛先</th><th>検証</th><th>詳細</th></tr></thead><tbody>';
-
-      for (const l of logs.slice(0, 50)) {
-        const statusCls = l.validation_status === "PASS" ? "cap-yes" : (l.validation_status === "FAIL" ? "cap-no" : l.validation_status === "WARN" ? "cap-partial" : "");
-        const statusLabel = l.validation_status || (l.status === "sent" ? "未検証" : l.status);
+      let html = '';
+      for (const l of logs) {
+        const statusColor = l.validation_status === "PASS" ? "#16a34a" : (l.validation_status === "FAIL" ? "#dc2626" : l.validation_status === "WARN" ? "#d97706" : "#94a3b8");
+        const statusLabel = l.validation_status || "未検証";
         const details = l.validation_details;
-        let detailStr = "";
+
+        html += `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:10px;">`;
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">`;
+        html += `<div><strong style="font-size:13px;">${l.email_type || "tracking_update"}</strong> <span style="font-size:12px;color:#888;">→ ${l.recipient_email}</span></div>`;
+        html += `<div style="display:flex;align-items:center;gap:8px;">`;
+        html += `<span style="font-size:11px;color:#888;">${formatDateTime(l.created_at)}</span>`;
+        html += `<span style="background:${statusColor};color:white;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;">${statusLabel}</span>`;
+        html += `</div></div>`;
+
         if (details && details.checks) {
-          const issues = details.checks.filter(c => c.status !== "PASS");
-          if (issues.length > 0) {
-            detailStr = issues.map(c => `${c.name}: ${c.detail}`).join("<br>");
-          } else {
-            detailStr = details.summary || "";
+          html += '<div style="display:grid;gap:4px;">';
+          for (const c of details.checks) {
+            const icon = c.status === "PASS" ? "✅" : (c.status === "FAIL" ? "❌" : "⚠️");
+            const detailColor = c.status === "PASS" ? "#166534" : (c.status === "FAIL" ? "#991b1b" : "#92400e");
+            html += `<div style="font-size:12px;padding:4px 8px;background:${c.status === "PASS" ? "#f0fdf4" : c.status === "FAIL" ? "#fef2f2" : "#fffbeb"};border-radius:4px;">`;
+            html += `${icon} <strong>${c.name}</strong>: <span style="color:${detailColor}">${c.detail}</span>`;
+            html += `</div>`;
           }
+          html += '</div>';
         }
 
-        html += `<tr>
-          <td class="timestamp">${formatDateTime(l.created_at)}</td>
-          <td style="font-family:monospace;font-size:11px">${l.awb_id}</td>
-          <td>${l.email_type || ""}</td>
-          <td style="font-size:11px">${l.recipient_email || ""}</td>
-          <td class="${statusCls}" style="font-weight:600">${statusLabel}</td>
-          <td style="font-size:11px">${detailStr}</td>
-        </tr>`;
+        html += `</div>`;
       }
 
-      html += '</tbody></table>';
-      document.getElementById("statsEmailValidation").innerHTML = html;
+      container.innerHTML = html;
     }
 
     // ============================================
