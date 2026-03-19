@@ -181,12 +181,14 @@
         <div class="stats-panel-tab" data-stab="raw" onclick="switchStatsTab('raw')">生データ</div>
         <div class="stats-panel-tab" data-stab="costs" onclick="switchStatsTab('costs')">API コスト</div>
         <div class="stats-panel-tab" data-stab="polling" onclick="switchStatsTab('polling')">ポーリング状況</div>
+        <div class="stats-panel-tab" data-stab="emailValidation" onclick="switchStatsTab('emailValidation')">メール検証</div>
       </div>
       <div id="statsCapability" class="stats-content"><div class="loading">データ読み込み中...</div></div>
       <div id="statsDelay" class="stats-content" style="display:none"></div>
       <div id="statsRaw" class="stats-content" style="display:none"></div>
       <div id="statsCosts" class="stats-content" style="display:none"></div>
       <div id="statsPolling" class="stats-content" style="display:none"></div>
+      <div id="statsEmailValidation" class="stats-content" style="display:none"></div>
     </div>
 
     <!-- Detail Panel -->
@@ -225,21 +227,27 @@
     // Load All
     // ============================================
     let allAwbs = [];
+    let allApiCosts = [];
+    let allEmailLogs = [];
     async function loadAll() {
       document.getElementById("lastUpdate").textContent = "更新中...";
-      const [awbs, airlineEvents, apiCosts, pollSchedules, faAlerts] = await Promise.all([
+      const [awbs, airlineEvents, apiCosts, pollSchedules, faAlerts, emailLogs] = await Promise.all([
         fetchData("awb_master", null, 100),
         fetchData("airline_event_log", null, 500),
         fetchData("api_costs", null, 500),
         fetchData("poll_schedule", null, 100),
         fetchData("flightaware_alerts", null, 100),
+        fetchData("email_log", null, 200),
       ]);
       allAwbs = awbs;
+      allApiCosts = apiCosts;
+      allEmailLogs = emailLogs;
       renderStats(allAwbs);
-      renderAwbTable(allAwbs);
+      renderAwbTable(allAwbs, apiCosts);
       renderAirlineStats(airlineEvents);
       renderApiCosts(apiCosts);
       renderPollingStatus(pollSchedules, faAlerts);
+      renderEmailValidation(emailLogs);
       document.getElementById("lastUpdate").textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}`;
     }
 
@@ -265,15 +273,25 @@
     // ============================================
     // AWB Table
     // ============================================
-    function renderAwbTable(awbs) {
+    function renderAwbTable(awbs, apiCosts) {
       if (awbs.length === 0) {
         document.getElementById("awbTable").innerHTML = '<div class="loading">AWB データなし</div>';
         return;
       }
 
+      // AWB毎のAPI費用を集計
+      const costByAwb = {};
+      for (const c of (apiCosts || [])) {
+        const awb = c.awb_id || "";
+        if (!costByAwb[awb]) costByAwb[awb] = 0;
+        costByAwb[awb] += parseFloat(c.cost_usd) || 0;
+      }
+
       const rows = awbs.map(a => {
         const route = a.route || `${a.origin || "?"}→${a.destination || "?"}`;
         const dt = a.delivery_type || '-';
+        const cost = costByAwb[a.awb_id] || 0;
+        const costStr = cost > 0 ? `$${cost.toFixed(2)}` : '-';
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
@@ -281,13 +299,14 @@
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
           <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
+          <td>${costStr}</td>
           <td>${formatDateShort(a.updated_at)}</td>
         </tr>`;
       }).join("");
 
       document.getElementById("awbTable").innerHTML = `
         <table>
-          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>最終更新</th></tr></thead>
+          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>API費用</th><th>最終更新</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       `;
@@ -730,6 +749,7 @@
       document.getElementById("statsRaw").style.display = tab === "raw" ? "block" : "none";
       document.getElementById("statsCosts").style.display = tab === "costs" ? "block" : "none";
       document.getElementById("statsPolling").style.display = tab === "polling" ? "block" : "none";
+      document.getElementById("statsEmailValidation").style.display = tab === "emailValidation" ? "block" : "none";
     }
 
     function renderAirlineStats(events) {
@@ -1017,6 +1037,60 @@
       }
 
       document.getElementById("statsPolling").innerHTML = html;
+    }
+
+    // ============================================
+    // Email Validation Tab
+    // ============================================
+    function renderEmailValidation(logs) {
+      if (!logs || logs.length === 0) {
+        document.getElementById("statsEmailValidation").innerHTML = '<div class="loading">メール送信履歴なし</div>';
+        return;
+      }
+
+      // 検証結果があるもののみ
+      const validated = logs.filter(l => l.validation_status);
+      const passCount = validated.filter(l => l.validation_status === "PASS").length;
+      const warnCount = validated.filter(l => l.validation_status === "WARN").length;
+      const failCount = validated.filter(l => l.validation_status === "FAIL").length;
+
+      let html = `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+          <div class="stat-card"><div class="value" style="font-size:20px;">${logs.length}</div><div class="label">送信総数</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;color:#16a34a;">${passCount}</div><div class="label">PASS</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;color:#d97706;">${warnCount}</div><div class="label">WARN</div></div>
+          <div class="stat-card"><div class="value" style="font-size:20px;color:#dc2626;">${failCount}</div><div class="label">FAIL</div></div>
+        </div>
+      `;
+
+      html += '<table class="capability-table"><thead><tr><th>送信日時</th><th>AWB</th><th>種別</th><th>宛先</th><th>検証</th><th>詳細</th></tr></thead><tbody>';
+
+      for (const l of logs.slice(0, 50)) {
+        const statusCls = l.validation_status === "PASS" ? "cap-yes" : (l.validation_status === "FAIL" ? "cap-no" : l.validation_status === "WARN" ? "cap-partial" : "");
+        const statusLabel = l.validation_status || (l.status === "sent" ? "未検証" : l.status);
+        const details = l.validation_details;
+        let detailStr = "";
+        if (details && details.checks) {
+          const issues = details.checks.filter(c => c.status !== "PASS");
+          if (issues.length > 0) {
+            detailStr = issues.map(c => `${c.name}: ${c.detail}`).join("<br>");
+          } else {
+            detailStr = details.summary || "";
+          }
+        }
+
+        html += `<tr>
+          <td class="timestamp">${formatDateTime(l.created_at)}</td>
+          <td style="font-family:monospace;font-size:11px">${l.awb_id}</td>
+          <td>${l.email_type || ""}</td>
+          <td style="font-size:11px">${l.recipient_email || ""}</td>
+          <td class="${statusCls}" style="font-weight:600">${statusLabel}</td>
+          <td style="font-size:11px">${detailStr}</td>
+        </tr>`;
+      }
+
+      html += '</tbody></table>';
+      document.getElementById("statsEmailValidation").innerHTML = html;
     }
 
     // ============================================
