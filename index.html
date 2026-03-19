@@ -34,7 +34,8 @@
     .panel-header h2 { font-size: 15px; font-weight: 600; }
 
     table { width: 100%; border-collapse: collapse; }
-    th { background: #f8f9fa; padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+    th { background: #f8f9fa; padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; white-space: nowrap; user-select: none; }
+    th[onclick]:hover { background: #eef1f5; color: #333; }
     td { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
     tr:hover { background: #f8faff; }
     tr.selected { background: #eff6ff; }
@@ -165,7 +166,12 @@
     <!-- AWB Table -->
     <div class="panel">
       <div class="panel-header">
-        <h2>AWB 一覧</h2>
+        <h2>AWB 一覧 <span id="awbCount" style="font-size:12px;color:#888;font-weight:400"></span></h2>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <label style="font-size:12px;color:#666;cursor:pointer;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="showDelivered" onchange="renderAwbTable(allAwbs, allApiCosts)"> 完了案件を表示
+          </label>
+        </div>
       </div>
       <div id="awbTable"><div class="loading">読み込み中...</div></div>
     </div>
@@ -270,12 +276,60 @@
     }
 
     // ============================================
-    // AWB Table
+    // AWB Table (Sort & Filter)
     // ============================================
+    let sortColumn = "updated_at";
+    let sortAsc = false; // default: newest first
+
+    const STATUS_ORDER = {
+      IN_TRANSIT: 0, TENDERED: 1, EXPORT_CLEARED: 2, AT_WAREHOUSE: 3, PICKED_UP: 4,
+      ARRIVED: 5, IMPORT_CLEARED: 6, RECOVERED: 7, REGISTERED: 8, DELIVERED: 90, CANCELLED: 99
+    };
+
+    function sortAwbs(awbs, column, asc) {
+      return [...awbs].sort((a, b) => {
+        let va, vb;
+        switch (column) {
+          case "awb": va = a.awb_display || a.awb_id; vb = b.awb_display || b.awb_id; break;
+          case "status": va = STATUS_ORDER[a.status] ?? 50; vb = STATUS_ORDER[b.status] ?? 50; return asc ? va - vb : vb - va;
+          case "case_number": va = a.case_number || ""; vb = b.case_number || ""; break;
+          case "delivery_type": va = a.delivery_type || ""; vb = b.delivery_type || ""; break;
+          case "updated_at": va = a.updated_at || ""; vb = b.updated_at || ""; break;
+          default: va = ""; vb = ""; break;
+        }
+        if (typeof va === "string") { const cmp = va.localeCompare(vb); return asc ? cmp : -cmp; }
+        return asc ? va - vb : vb - va;
+      });
+    }
+
+    function toggleSort(col) {
+      if (sortColumn === col) { sortAsc = !sortAsc; } else { sortColumn = col; sortAsc = true; }
+      renderAwbTable(allAwbs, allApiCosts);
+    }
+
+    function sortIcon(col) {
+      if (sortColumn !== col) return ' <span style="opacity:0.3">⇅</span>';
+      return sortAsc ? ' ↑' : ' ↓';
+    }
+
     function renderAwbTable(awbs, apiCosts) {
       if (awbs.length === 0) {
         document.getElementById("awbTable").innerHTML = '<div class="loading">AWB データなし</div>';
         return;
+      }
+
+      // Filter: hide DELIVERED unless checkbox is checked
+      const showDelivered = document.getElementById("showDelivered")?.checked || false;
+      let filtered = showDelivered ? awbs : awbs.filter(a => a.status !== "DELIVERED");
+
+      // Sort
+      filtered = sortAwbs(filtered, sortColumn, sortAsc);
+
+      // Update count
+      const countEl = document.getElementById("awbCount");
+      if (countEl) {
+        const deliveredCount = awbs.filter(a => a.status === "DELIVERED").length;
+        countEl.textContent = showDelivered ? `(${filtered.length}件)` : `(${filtered.length}件 / 完了${deliveredCount}件 非表示)`;
       }
 
       // AWB毎のAPI費用を集計
@@ -296,7 +350,7 @@
         }
       }
 
-      const rows = awbs.map(a => {
+      const rows = filtered.map(a => {
         const route = a.route || `${a.origin || "?"}→${a.destination || "?"}`;
         const dt = a.delivery_type || '-';
         const cost = costByAwb[a.awb_id] || 0;
@@ -322,7 +376,17 @@
 
       document.getElementById("awbTable").innerHTML = `
         <table>
-          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>API費用</th><th>検証</th><th>最終更新</th></tr></thead>
+          <thead><tr>
+            <th style="cursor:pointer" onclick="toggleSort('awb')">AWB${sortIcon('awb')}</th>
+            <th>ルート</th>
+            <th>個数 / 重量</th>
+            <th style="cursor:pointer" onclick="toggleSort('status')">ステータス${sortIcon('status')}</th>
+            <th style="cursor:pointer" onclick="toggleSort('delivery_type')">範囲${sortIcon('delivery_type')}</th>
+            <th style="cursor:pointer" onclick="toggleSort('case_number')">案件番号${sortIcon('case_number')}</th>
+            <th>API費用</th>
+            <th>検証</th>
+            <th style="cursor:pointer" onclick="toggleSort('updated_at')">最終更新${sortIcon('updated_at')}</th>
+          </tr></thead>
           <tbody>${rows}</tbody>
         </table>
       `;
