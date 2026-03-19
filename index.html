@@ -428,7 +428,6 @@
         const isCompleted = !!m.actual_at;
         const isActive = !isCompleted && i === firstPendingFromBottom;
         const dotClass = isCompleted ? "completed" : (isActive ? "active" : "pending");
-        const icon = EVENT_ICONS[m.event_code] || "●";
 
         // DEP/ARR: フライトテーブルのデータを優先（CargoAI が正）
         let displayScheduled = m.scheduled_at;
@@ -483,7 +482,7 @@
 
         return `
           <div class="timeline-item">
-            <div class="timeline-dot ${dotClass}">${isCompleted ? "✓" : icon}</div>
+            <div class="timeline-dot ${dotClass}">${isCompleted ? "✓" : "○"}</div>
             <div class="timeline-line"></div>
             <div class="timeline-content">
               <div class="timeline-title">
