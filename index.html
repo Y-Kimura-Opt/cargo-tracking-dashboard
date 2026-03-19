@@ -273,11 +273,13 @@
 
       const rows = awbs.map(a => {
         const route = a.route || `${a.origin || "?"}→${a.destination || "?"}`;
+        const dt = a.delivery_type || '-';
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
           <td>${a.total_pieces} pcs / ${a.total_weight} kg</td>
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
+          <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
           <td>${formatDateShort(a.updated_at)}</td>
         </tr>`;
@@ -285,7 +287,7 @@
 
       document.getElementById("awbTable").innerHTML = `
         <table>
-          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>案件番号</th><th>最終更新</th></tr></thead>
+          <thead><tr><th>AWB</th><th>ルート</th><th>個数 / 重量</th><th>ステータス</th><th>範囲</th><th>案件番号</th><th>最終更新</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       `;
