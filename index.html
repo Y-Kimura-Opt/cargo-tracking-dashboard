@@ -357,7 +357,7 @@
         const costStr = cost > 0 ? `$${cost.toFixed(2)}` : '-';
         const val = validationByAwb[a.awb_id];
         let valBadge = '<span style="color:#94a3b8;font-size:11px;">-</span>';
-        if (val) {
+        if (val && a.status !== "DELIVERED") {
           const cls = val.validation_status === "PASS" ? "badge-delivered" : (val.validation_status === "FAIL" ? "badge-cancelled" : "badge-in_transit");
           valBadge = `<span class="badge ${cls}" style="cursor:pointer" onclick="event.stopPropagation();openValidation('${a.awb_id}')">${val.validation_status}</span>`;
         }
