@@ -361,6 +361,9 @@
           const cls = val.validation_status === "PASS" ? "badge-delivered" : (val.validation_status === "FAIL" ? "badge-cancelled" : "badge-in_transit");
           valBadge = `<span class="badge ${cls}" style="cursor:pointer" onclick="event.stopPropagation();openValidation('${a.awb_id}')">${val.validation_status}</span>`;
         }
+        const prealertBadge = a.prealert_received_at
+          ? `<span style="color:#22c55e;font-size:13px;" title="受領: ${formatDateShort(a.prealert_received_at)}">&#x2713;</span>`
+          : '<span style="color:#94a3b8;font-size:11px;">-</span>';
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
@@ -368,6 +371,7 @@
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
           <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
+          <td>${prealertBadge}</td>
           <td>${costStr}</td>
           <td>${valBadge}</td>
           <td>${formatDateShort(a.updated_at)}</td>
@@ -383,6 +387,7 @@
             <th style="cursor:pointer" onclick="toggleSort('status')">ステータス${sortIcon('status')}</th>
             <th style="cursor:pointer" onclick="toggleSort('delivery_type')">範囲${sortIcon('delivery_type')}</th>
             <th style="cursor:pointer" onclick="toggleSort('case_number')">案件番号${sortIcon('case_number')}</th>
+            <th>PA</th>
             <th>API費用</th>
             <th>検証</th>
             <th style="cursor:pointer" onclick="toggleSort('updated_at')">最終更新${sortIcon('updated_at')}</th>
