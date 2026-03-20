@@ -487,16 +487,15 @@
         return true;
       });
 
-      // Sort: 業務フロー降順（最新ステップが上、レグ単位で DEP→ARR ペア）
+      // Sort: seq ベース（降順: 大きい seq が上）
+      // seq がない場合はフォールバック（ゾーン方式）
       //
-      // 3つのゾーンに分ける:
+      // フォールバック（旧データ用）:
       //   上部: ICC, RSA, DLV（到着後イベント）→ EVENT_ORDER 降順
       //   中部: DEP/ARR（フライト）→ レグ降順、各レグ内は ARR上→DEP下
       //   下部: PUP, AWB, ECC, TTA, BKD（出発前イベント）→ EVENT_ORDER 降順
-      //
-      // DEP/ARR のレグ: flight_number でペア化し、DEP の時刻でレグ順を決定
 
-      // Step 1: DEP の時刻でレグ番号を割り当て
+      // Step 1: DEP の時刻でレグ番号を割り当て（フォールバック用）
       const depTimes = milestones
         .filter(m => m.event_code === "DEP")
         .map(m => ({ flight: m.flight_number, time: new Date(m.scheduled_at || m.actual_at || "0000").getTime() }))
@@ -504,25 +503,24 @@
       const legIndex = {};
       depTimes.forEach((d, i) => { legIndex[d.flight] = i; });
 
-      const getZoneAndScore = (m) => {
+      const getFallbackScore = (m) => {
         const idx = EVENT_ORDER.indexOf(m.event_code);
         const order = idx === -1 ? 99 : idx;
 
         if (m.event_code === "DEP" || m.event_code === "ARR") {
-          // 中部: ゾーン1000 + レグ番号 * 10 + (ARR=1, DEP=0)
           const leg = legIndex[m.flight_number] ?? 0;
           const sub = m.event_code === "ARR" ? 1 : 0;
           return 1000 + leg * 10 + sub;
         }
-        if (order >= 8) {
-          // 上部: ゾーン2000 + EVENT_ORDER
-          return 2000 + order;
-        }
-        // 下部: ゾーン0 + EVENT_ORDER
+        if (order >= 8) return 2000 + order;
         return order;
       };
 
-      milestones.sort((a, b) => getZoneAndScore(b) - getZoneAndScore(a));
+      milestones.sort((a, b) => {
+        const seqA = a.seq ?? getFallbackScore(a);
+        const seqB = b.seq ?? getFallbackScore(b);
+        return seqB - seqA;
+      });
 
       if (milestones.length === 0) {
         document.getElementById("tabTimeline").innerHTML = '<div class="loading">マイルストーンなし</div>';
