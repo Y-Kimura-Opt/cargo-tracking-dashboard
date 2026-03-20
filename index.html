@@ -452,13 +452,13 @@
     // ============================================
     const EVENT_ORDER = ["PUP", "AWB", "ECC", "TTA", "BKD", "RCS", "DEP", "ARR", "ICC", "RSA", "DLV"];
     const EVENT_ICONS = {
-      PUP: "📦", AWB: "🏭", ECC: "📋", TTA: "✈️", BKD: "📝",
-      RCS: "📥", DEP: "🛫", ARR: "🛬", ICC: "📋", RSA: "🚛", DLV: "✅"
+      PUP: "📦", WH_IN: "🏭", AWB: "🏭", ECC: "📋", TTA: "✈️", BKD: "📝",
+      RCS: "📥", DEP: "🛫", ARR: "🛬", ICC: "📋", NFD: "📬", CCD: "✅", RSA: "🚛", DLV: "✅"
     };
     const EVENT_LABELS = {
-      PUP: "集荷", AWB: "倉庫搬入", ECC: "輸出通関", TTA: "航空会社搬入",
+      PUP: "集荷", WH_IN: "倉庫到着", AWB: "倉庫搬入", ECC: "輸出通関", TTA: "航空会社搬入",
       BKD: "予約確認", RCS: "航空会社搬入", DEP: "離陸", ARR: "到着",
-      ICC: "輸入通関", RSA: "貨物引取", DLV: "納品"
+      ICC: "輸入通関", NFD: "引取可能通知", CCD: "通関完了", RSA: "貨物引取", DLV: "納品"
     };
 
     function renderTimeline(milestones, status, flights) {
