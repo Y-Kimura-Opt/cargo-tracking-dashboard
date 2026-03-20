@@ -366,13 +366,13 @@
           ? `<span style="color:#22c55e;font-size:13px;" title="受領: ${formatDateShort(a.prealert_received_at)}">&#x2713;</span>`
           : '<span style="color:#94a3b8;font-size:11px;">-</span>';
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
+          <td>${a.case_number || '-'}</td>
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
           <td>${a.total_pieces} pcs / ${a.total_weight} kg${a.total_volume ? " / " + formatM3(a.total_volume) + " M3" : ""}</td>
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
           <td>${a.service_type || '-'}</td>
           <td>${dt}</td>
-          <td>${a.case_number || '-'}</td>
           <td>${prealertBadge}</td>
           <td>${costStr}</td>
           <td>${valBadge}</td>
@@ -383,13 +383,13 @@
       document.getElementById("awbTable").innerHTML = `
         <table>
           <thead><tr>
+            <th style="cursor:pointer" onclick="toggleSort('case_number')">案件番号${sortIcon('case_number')}</th>
             <th style="cursor:pointer" onclick="toggleSort('awb')">AWB${sortIcon('awb')}</th>
             <th>ルート</th>
             <th>個数 / 重量 / 体積</th>
             <th style="cursor:pointer" onclick="toggleSort('status')">ステータス${sortIcon('status')}</th>
             <th style="cursor:pointer" onclick="toggleSort('service_type')">タイプ${sortIcon('service_type')}</th>
             <th style="cursor:pointer" onclick="toggleSort('delivery_type')">範囲${sortIcon('delivery_type')}</th>
-            <th style="cursor:pointer" onclick="toggleSort('case_number')">案件番号${sortIcon('case_number')}</th>
             <th>PA</th>
             <th>API費用</th>
             <th>検証</th>
