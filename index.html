@@ -524,19 +524,14 @@
       const flightMap = {};
       (flights || []).forEach(f => { flightMap[f.flight_number] = f; });
 
-      // completed = actual_at あり, active = 次に完了予定のイベント, pending = それ以外
-      // 降順表示なので、下から見て最初の未完了がactive
-      const firstPendingFromBottom = (() => {
-        for (let i = milestones.length - 1; i >= 0; i--) {
-          if (!milestones[i].actual_at) return i;
-        }
-        return -1;
-      })();
+      // completed = actual_at あり, active = 最新の完了済みイベント（青）, pending = 未完了
+      // 降順ソート済みなので、最初の completed が最新完了
+      const latestCompletedIdx = milestones.findIndex(m => !!m.actual_at);
 
       const items = milestones.map((m, i) => {
         const isCompleted = !!m.actual_at;
-        const isActive = !isCompleted && i === firstPendingFromBottom;
-        const dotClass = isCompleted ? "completed" : (isActive ? "active" : "pending");
+        const isActive = isCompleted && i === latestCompletedIdx;
+        const dotClass = isActive ? "active" : (isCompleted ? "completed" : "pending");
 
         // DEP/ARR: フライトテーブルのデータを優先（CargoAI が正）
         let displayScheduled = m.scheduled_at;
