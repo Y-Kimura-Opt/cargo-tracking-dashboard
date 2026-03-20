@@ -93,17 +93,6 @@
     .timeline-meta { font-size: 12px; color: #888; margin-top: 4px; display: flex; gap: 16px; flex-wrap: wrap; }
     .timeline-meta span { display: flex; align-items: center; gap: 4px; }
     .timeline-remarks { font-size: 12px; color: #666; margin-top: 4px; font-style: italic; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; }
-    /* Stats Panel */
-    .stats-panel-tabs { display: flex; gap: 0; border-bottom: 1px solid #e5e7eb; padding: 0 20px; }
-    .stats-panel-tab { padding: 10px 16px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; color: #666; }
-    .stats-panel-tab.active { color: #1a1a2e; border-bottom-color: #2563eb; }
-    .stats-panel-tab:hover { color: #333; }
-    .stats-content { padding: 20px; }
-
-    .capability-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .capability-table th { background: #f0f2f5; padding: 8px 12px; text-align: center; font-weight: 600; color: #555; border: 1px solid #e5e7eb; }
-    .capability-table td { padding: 6px 12px; text-align: center; border: 1px solid #e5e7eb; }
-    .capability-table tr:hover { background: #f8faff; }
     .cap-yes { color: #16a34a; font-weight: 600; }
     .cap-no { color: #dc2626; }
     .cap-partial { color: #d97706; }
@@ -171,19 +160,6 @@
       <div id="awbTable"><div class="loading">読み込み中...</div></div>
     </div>
 
-    <!-- System Status Panel -->
-    <div class="panel" id="systemStatsPanel">
-      <div class="panel-header">
-        <h2>API コスト / ポーリング状況</h2>
-      </div>
-      <div class="stats-panel-tabs">
-        <div class="stats-panel-tab active" data-stab="costs" onclick="switchStatsTab('costs')">API コスト</div>
-        <div class="stats-panel-tab" data-stab="polling" onclick="switchStatsTab('polling')">ポーリング状況</div>
-      </div>
-      <div id="statsCosts" class="stats-content"><div class="loading">データ読み込み中...</div></div>
-      <div id="statsPolling" class="stats-content" style="display:none"></div>
-    </div>
-
     <!-- Detail Panel -->
     <div class="panel detail-panel" id="detailPanel">
       <div class="detail-header">
@@ -228,11 +204,9 @@
     let allEmailLogs = [];
     async function loadAll() {
       document.getElementById("lastUpdate").textContent = "更新中...";
-      const [awbs, apiCosts, pollSchedules, faAlerts, emailLogs] = await Promise.all([
+      const [awbs, apiCosts, emailLogs] = await Promise.all([
         fetchData("awb_master", null, 100),
         fetchData("api_costs", null, 500),
-        fetchData("poll_schedule", null, 100),
-        fetchData("flightaware_alerts", null, 100),
         fetchData("email_log", null, 200),
       ]);
       allAwbs = awbs;
@@ -240,8 +214,6 @@
       allEmailLogs = emailLogs;
       renderStats(allAwbs);
       renderAwbTable(allAwbs, apiCosts);
-      renderApiCosts(apiCosts);
-      renderPollingStatus(pollSchedules, faAlerts);
       document.getElementById("lastUpdate").textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}`;
     }
 
@@ -738,8 +710,8 @@
       // --- Customs (ECC/ICC) ---
       const eccMs = milestones.find(m => m.event_code === "ECC");
       const iccMs = milestones.find(m => m.event_code === "ICC");
-      const eccText = eccMs ? (eccMs.actual_at ? `完了 ${formatDateShort(eccMs.actual_at)}` : (eccMs.scheduled_at ? `予定 ${formatDateShort(eccMs.scheduled_at)}` : "テンプレート作成済")) : "対象外";
-      const iccText = iccMs ? (iccMs.actual_at ? `完了 ${formatDateShort(iccMs.actual_at)}` : (iccMs.scheduled_at ? `予定 ${formatDateShort(iccMs.scheduled_at)}` : "テンプレート作成済")) : "対象外";
+      const eccText = eccMs ? (eccMs.actual_at ? `完了 ${formatDateShort(eccMs.actual_at)}` : (eccMs.scheduled_at ? `予定 ${formatDateShort(eccMs.scheduled_at)}` : "当社対応")) : "対応不要";
+      const iccText = iccMs ? (iccMs.actual_at ? `完了 ${formatDateShort(iccMs.actual_at)}` : (iccMs.scheduled_at ? `予定 ${formatDateShort(iccMs.scheduled_at)}` : "当社対応")) : "対応不要";
       items.push({ label: "通関", status: eccMs || iccMs ? "ok" : "na", detail: `輸出: ${eccText}`, sub: `輸入: ${iccText}` });
 
       // --- API Cost ---
@@ -952,122 +924,6 @@
       const h = String(d.getHours()).padStart(2, "0");
       const min = String(d.getMinutes()).padStart(2, "0");
       return `${m}/${day} ${h}:${min}`;
-    }
-
-    // ============================================
-    // Airline Stats
-    // ============================================
-    function switchStatsTab(tab) {
-      document.querySelectorAll(".stats-panel-tab").forEach(t => t.classList.remove("active"));
-      document.querySelector(`[data-stab="${tab}"]`).classList.add("active");
-      document.getElementById("statsCosts").style.display = tab === "costs" ? "block" : "none";
-      document.getElementById("statsPolling").style.display = tab === "polling" ? "block" : "none";
-    }
-
-    // ============================================
-    // API Costs
-    // ============================================
-    function renderApiCosts(costs) {
-      if (!costs || costs.length === 0) {
-        document.getElementById("statsCosts").innerHTML = '<div class="loading">API コストデータなし</div>';
-        return;
-      }
-
-      // AWB毎の集計
-      const awbCosts = {};
-      let totalCargoAI = 0;
-      let totalFlightAware = 0;
-
-      for (const c of costs) {
-        const awb = c.awb_id || "UNKNOWN";
-        if (!awbCosts[awb]) awbCosts[awb] = { cargoai: 0, flightaware: 0, calls: 0 };
-        awbCosts[awb].calls++;
-        const cost = parseFloat(c.cost_usd) || 0;
-        if (c.api_provider === "CARGOAI") {
-          awbCosts[awb].cargoai += cost;
-          totalCargoAI += cost;
-        } else {
-          awbCosts[awb].flightaware += cost;
-          totalFlightAware += cost;
-        }
-      }
-
-      const grandTotal = totalCargoAI + totalFlightAware;
-
-      let html = `
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-          <div class="stat-card"><div class="value" style="font-size:20px;">$${grandTotal.toFixed(2)}</div><div class="label">合計コスト</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;color:#2563eb;">$${totalCargoAI.toFixed(2)}</div><div class="label">CargoAI</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;color:#16a34a;">$${totalFlightAware.toFixed(2)}</div><div class="label">FlightAware</div></div>
-          <div class="stat-card"><div class="value" style="font-size:20px;">${costs.length}</div><div class="label">API呼出回数</div></div>
-        </div>
-      `;
-
-      html += '<table class="capability-table"><thead><tr><th>AWB</th><th>CargoAI</th><th>FlightAware</th><th>合計</th><th>呼出回数</th></tr></thead><tbody>';
-      const sortedAwbs = Object.entries(awbCosts).sort((a, b) => (b[1].cargoai + b[1].flightaware) - (a[1].cargoai + a[1].flightaware));
-      for (const [awb, c] of sortedAwbs) {
-        const total = c.cargoai + c.flightaware;
-        html += `<tr>
-          <td style="font-family:monospace">${awb}</td>
-          <td>$${c.cargoai.toFixed(2)}</td>
-          <td>$${c.flightaware.toFixed(2)}</td>
-          <td style="font-weight:600">$${total.toFixed(2)}</td>
-          <td>${c.calls}</td>
-        </tr>`;
-      }
-      html += '</tbody></table>';
-
-      document.getElementById("statsCosts").innerHTML = html;
-    }
-
-    // ============================================
-    // Polling Status
-    // ============================================
-    function renderPollingStatus(schedules, alerts) {
-      let html = '';
-
-      // Polling schedules
-      html += '<h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">ポーリングスケジュール</h3>';
-      if (!schedules || schedules.length === 0) {
-        html += '<div class="loading">アクティブなスケジュールなし</div>';
-      } else {
-        html += '<table class="capability-table"><thead><tr><th>AWB</th><th>タイプ</th><th>ステータス</th><th>試行回数</th><th>次回実行</th><th>フライト</th></tr></thead><tbody>';
-        for (const s of schedules) {
-          const statusCls = s.status === "COMPLETED" ? "cap-yes" : (s.status === "FAILED" ? "cap-no" : "cap-partial");
-          html += `<tr>
-            <td style="font-family:monospace">${s.awb_id}</td>
-            <td>${s.poll_type}</td>
-            <td class="${statusCls}">${s.status}</td>
-            <td>${s.attempt_count}/${s.max_attempts}</td>
-            <td>${s.status === "ACTIVE" ? formatDateTime(s.next_poll_at) : "-"}</td>
-            <td>${s.flight_number || "-"}</td>
-          </tr>`;
-        }
-        html += '</tbody></table>';
-      }
-
-      // FlightAware alerts
-      html += '<h3 style="font-size:14px;font-weight:600;margin:20px 0 12px;">FlightAware アラート</h3>';
-      if (!alerts || alerts.length === 0) {
-        html += '<div class="loading">登録済みアラートなし</div>';
-      } else {
-        html += '<table class="capability-table"><thead><tr><th>AWB</th><th>便名</th><th>ICAO</th><th>区間</th><th>ステータス</th><th>DEP通知</th><th>ARR通知</th></tr></thead><tbody>';
-        for (const a of alerts) {
-          const statusCls = a.status === "COMPLETED" ? "cap-yes" : (a.status === "ACTIVE" ? "cap-partial" : "cap-no");
-          html += `<tr>
-            <td style="font-family:monospace">${a.awb_id}</td>
-            <td>${a.flight_number}</td>
-            <td>${a.flight_ident}</td>
-            <td>${a.origin || "?"}→${a.destination || "?"}</td>
-            <td class="${statusCls}">${a.status}</td>
-            <td>${a.dep_triggered_at ? formatDateTime(a.dep_triggered_at) : "-"}</td>
-            <td>${a.arr_triggered_at ? formatDateTime(a.arr_triggered_at) : "-"}</td>
-          </tr>`;
-        }
-        html += '</tbody></table>';
-      }
-
-      document.getElementById("statsPolling").innerHTML = html;
     }
 
     // ============================================
