@@ -206,11 +206,13 @@
         <div class="tab active" data-tab="timeline" onclick="switchTab('timeline')">タイムライン</div>
         <div class="tab" data-tab="flights" onclick="switchTab('flights')">フライト</div>
         <div class="tab" data-tab="logs" onclick="switchTab('logs')">ログ</div>
+        <div class="tab" data-tab="acquisition" onclick="switchTab('acquisition')">取得状況</div>
         <div class="tab" data-tab="validation" onclick="switchTab('validation')">メール検証</div>
       </div>
       <div id="tabTimeline" class="timeline"></div>
       <div id="tabFlights" class="flights-section" style="display:none"></div>
       <div id="tabLogs" style="display:none; padding: 0 20px 20px;"></div>
+      <div id="tabAcquisition" style="display:none; padding: 0 20px 20px;"></div>
       <div id="tabValidation" style="display:none; padding: 0 20px 20px;"></div>
     </div>
   </div>
@@ -374,7 +376,6 @@
           <td>${a.service_type || '-'}</td>
           <td>${dt}</td>
           <td>${prealertBadge}</td>
-          <td>${costStr}</td>
           <td>${valBadge}</td>
           <td>${formatDateShort(a.updated_at)}</td>
         </tr>`;
@@ -391,7 +392,6 @@
             <th style="cursor:pointer" onclick="toggleSort('service_type')">タイプ${sortIcon('service_type')}</th>
             <th style="cursor:pointer" onclick="toggleSort('delivery_type')">範囲${sortIcon('delivery_type')}</th>
             <th>PA</th>
-            <th>API費用</th>
             <th>検証</th>
             <th style="cursor:pointer" onclick="toggleSort('updated_at')">最終更新${sortIcon('updated_at')}</th>
           </tr></thead>
@@ -672,6 +672,133 @@
     }
 
     // ============================================
+    // Acquisition Status (取得状況)
+    // ============================================
+    async function renderAcquisitionStatus(awbId) {
+      const el = document.getElementById("tabAcquisition");
+      el.innerHTML = '<div class="loading">読み込み中...</div>';
+
+      const awb = allAwbs.find(a => a.awb_id === awbId);
+      if (!awb) { el.innerHTML = '<div class="loading">AWBデータなし</div>'; return; }
+
+      // Fetch data in parallel
+      const [milestones, flights, faAlerts, costs, logs] = await Promise.all([
+        fetchData("milestones", awbId, 50),
+        fetchData("flights", awbId, 20),
+        fetchData("flightaware_alerts", awbId, 20),
+        fetchData("api_costs", awbId, 50),
+        fetchData("event_log", awbId, 50),
+      ]);
+
+      const items = [];
+
+      // --- Pre-alert ---
+      const paLog = logs.find(l => l.source === "PREALERT_SYNC" && l.level === "INFO" && l.message.includes("complete"));
+      if (awb.prealert_received_at) {
+        const paLegs = flights.filter(f => f.status === "SCHEDULED" || f.status === "DEPARTED" || f.status === "ARRIVED");
+        const legsText = paLegs.map(f => `${f.flight_number} ${f.origin}→${f.destination}`).join(", ");
+        items.push({ label: "Pre-alert", status: "ok", detail: `受領済 (${formatDateShort(awb.prealert_received_at)})`, sub: legsText || "-" });
+      } else {
+        items.push({ label: "Pre-alert", status: "pending", detail: "未受領", sub: "" });
+      }
+
+      // --- Pickup sync ---
+      const pickupLog = logs.find(l => l.source === "PICKUP_SYNC" && l.level === "INFO" && l.message.includes("complete"));
+      const pupMs = milestones.find(m => m.event_code === "PUP" && m.scheduled_at);
+      const whMs = milestones.find(m => m.event_code === "WH_IN" && m.scheduled_at);
+      if (pickupLog || pupMs) {
+        const pupTime = pupMs ? formatDateShort(pupMs.scheduled_at) : "-";
+        const whTime = whMs ? formatDateShort(whMs.scheduled_at) : "-";
+        const addr = pupMs?.location_name || "";
+        items.push({ label: "集荷情報", status: "ok", detail: `取得済: PUP ${pupTime}`, sub: addr ? `${addr} → WH_IN ${whTime}` : `WH_IN ${whTime}` });
+      } else {
+        const dt = (awb.delivery_type || "").toUpperCase();
+        if (dt.startsWith("DOOR")) {
+          items.push({ label: "集荷情報", status: "pending", detail: "未取得（DOOR案件）", sub: "" });
+        } else {
+          items.push({ label: "集荷情報", status: "na", detail: "対象外", sub: awb.delivery_type || "-" });
+        }
+      }
+
+      // --- Kintone ---
+      const kintoneLog = logs.find(l => l.source === "START_TRACKING" && l.message.includes("AWB created"));
+      const dtText = awb.delivery_type || "-";
+      const stText = awb.service_type || "-";
+      // Extract customs info from template log
+      const templateLog = logs.find(l => l.source === "MILESTONE_TEMPLATE" || (l.source === "START_TRACKING" && l.message.includes("Template")));
+      const templateCodes = templateLog ? templateLog.message.match(/Template created: ([A-Z_, ]+)/)?.[1] || "-" : "-";
+      items.push({ label: "Kintone", status: "ok", detail: `${dtText} / ${stText}`, sub: `テンプレート: ${templateCodes}` });
+
+      // --- Target Flight ---
+      const tfLog = logs.find(l => l.source === "START_TRACKING" && l.message.includes("Target flight confirmed"));
+      const paLog2 = logs.find(l => l.source === "START_TRACKING" && l.message.includes("Pre-alert confirmed"));
+      if (flights.length > 0) {
+        const flightText = flights.sort((a,b) => a.sequence - b.sequence).map(f => `${f.flight_number} ${f.origin}→${f.destination}`).join(", ");
+        const source = paLog2 ? "Pre-alert" : (tfLog ? "ターゲットFLT" : "CargoAI");
+        items.push({ label: "確定便", status: "ok", detail: `${flights.length}レグ (${source})`, sub: flightText });
+      } else {
+        items.push({ label: "確定便", status: "pending", detail: "未取得", sub: "" });
+      }
+
+      // --- FlightAware ---
+      const activeAlerts = faAlerts.filter(a => a.status === "ACTIVE" || a.status === "TRIGGERED_DEP");
+      const completedAlerts = faAlerts.filter(a => a.status === "COMPLETED");
+      if (faAlerts.length > 0) {
+        const alertText = faAlerts.map(a => `${a.flight_number}(${a.status})`).join(", ");
+        items.push({ label: "FlightAware", status: activeAlerts.length > 0 ? "ok" : "done", detail: `${activeAlerts.length}アクティブ / ${completedAlerts.length}完了`, sub: alertText });
+      } else {
+        items.push({ label: "FlightAware", status: "pending", detail: "アラートなし", sub: "" });
+      }
+
+      // --- Customs (ECC/ICC) ---
+      const eccMs = milestones.find(m => m.event_code === "ECC");
+      const iccMs = milestones.find(m => m.event_code === "ICC");
+      const eccText = eccMs ? (eccMs.actual_at ? `完了 ${formatDateShort(eccMs.actual_at)}` : (eccMs.scheduled_at ? `予定 ${formatDateShort(eccMs.scheduled_at)}` : "テンプレート作成済")) : "対象外";
+      const iccText = iccMs ? (iccMs.actual_at ? `完了 ${formatDateShort(iccMs.actual_at)}` : (iccMs.scheduled_at ? `予定 ${formatDateShort(iccMs.scheduled_at)}` : "テンプレート作成済")) : "対象外";
+      items.push({ label: "通関", status: eccMs || iccMs ? "ok" : "na", detail: `輸出: ${eccText}`, sub: `輸入: ${iccText}` });
+
+      // --- API Cost ---
+      const totalCost = costs.reduce((sum, c) => sum + (parseFloat(c.cost_usd) || 0), 0);
+      const costByProvider = {};
+      costs.forEach(c => {
+        const p = c.api_provider || "OTHER";
+        costByProvider[p] = (costByProvider[p] || 0) + (parseFloat(c.cost_usd) || 0);
+      });
+      const costBreakdown = Object.entries(costByProvider).map(([k, v]) => `${k}: $${v.toFixed(2)}`).join(", ");
+      items.push({ label: "API費用", status: totalCost > 0 ? "info" : "na", detail: totalCost > 0 ? `合計 $${totalCost.toFixed(2)}` : "$0.00", sub: costBreakdown });
+
+      // --- Milestone Template ---
+      const templateMs = milestones.filter(m => m.created_by === "TEMPLATE");
+      const allCodes = [...new Set(milestones.map(m => m.event_code))].sort((a, b) => {
+        const order = ["PUP", "WH_IN", "ECC", "TTA", "DEP", "ARR", "ICC", "DLV"];
+        return (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b));
+      });
+      const codeBadges = allCodes.map(c => {
+        const ms = milestones.filter(m => m.event_code === c);
+        const hasActual = ms.some(m => m.actual_at);
+        const hasSched = ms.some(m => m.scheduled_at);
+        const cls = hasActual ? "badge-delivered" : (hasSched ? "badge-in_transit" : "badge-registered");
+        return `<span class="badge ${cls}" style="margin:2px;font-size:11px;">${c}</span>`;
+      }).join("");
+      items.push({ label: "マイルストーン", status: "info", detail: `${milestones.length}件`, sub: codeBadges });
+
+      // Render
+      const statusIcon = { ok: "✅", pending: "⏳", done: "✅", na: "—", info: "ℹ️" };
+      const html = items.map(item => `
+        <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f0f0f0;align-items:flex-start;">
+          <div style="width:24px;text-align:center;flex-shrink:0;font-size:14px;">${statusIcon[item.status] || ""}</div>
+          <div style="width:100px;flex-shrink:0;font-size:13px;font-weight:600;color:#374151;">${item.label}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;color:#1a1a2e;">${item.detail}</div>
+            ${item.sub ? `<div style="font-size:12px;color:#888;margin-top:2px;">${item.sub}</div>` : ""}
+          </div>
+        </div>
+      `).join("");
+
+      el.innerHTML = `<div style="padding:8px 0;">${html}</div>`;
+    }
+
+    // ============================================
     // Tab Switching
     // ============================================
     function switchTab(tab) {
@@ -680,7 +807,9 @@
       document.getElementById("tabTimeline").style.display = tab === "timeline" ? "block" : "none";
       document.getElementById("tabFlights").style.display = tab === "flights" ? "block" : "none";
       document.getElementById("tabLogs").style.display = tab === "logs" ? "block" : "none";
+      document.getElementById("tabAcquisition").style.display = tab === "acquisition" ? "block" : "none";
       document.getElementById("tabValidation").style.display = tab === "validation" ? "block" : "none";
+      if (tab === "acquisition" && currentAwbId) renderAcquisitionStatus(currentAwbId);
       if (tab === "validation" && currentAwbId) renderAwbValidation(currentAwbId);
     }
 
