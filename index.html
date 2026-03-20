@@ -293,6 +293,7 @@
           case "awb": va = a.awb_display || a.awb_id; vb = b.awb_display || b.awb_id; break;
           case "status": va = STATUS_ORDER[a.status] ?? 50; vb = STATUS_ORDER[b.status] ?? 50; return asc ? va - vb : vb - va;
           case "case_number": va = a.case_number || ""; vb = b.case_number || ""; break;
+          case "service_type": va = a.service_type || ""; vb = b.service_type || ""; break;
           case "delivery_type": va = a.delivery_type || ""; vb = b.delivery_type || ""; break;
           case "updated_at": va = a.updated_at || ""; vb = b.updated_at || ""; break;
           default: va = ""; vb = ""; break;
@@ -369,6 +370,7 @@
           <td>${route}</td>
           <td>${a.total_pieces} pcs / ${a.total_weight} kg${a.total_volume ? " / " + formatM3(a.total_volume) + " M3" : ""}</td>
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
+          <td>${a.service_type || '-'}</td>
           <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
           <td>${prealertBadge}</td>
@@ -385,6 +387,7 @@
             <th>ルート</th>
             <th>個数 / 重量 / 体積</th>
             <th style="cursor:pointer" onclick="toggleSort('status')">ステータス${sortIcon('status')}</th>
+            <th style="cursor:pointer" onclick="toggleSort('service_type')">タイプ${sortIcon('service_type')}</th>
             <th style="cursor:pointer" onclick="toggleSort('delivery_type')">範囲${sortIcon('delivery_type')}</th>
             <th style="cursor:pointer" onclick="toggleSort('case_number')">案件番号${sortIcon('case_number')}</th>
             <th>PA</th>
@@ -422,7 +425,8 @@
         <div class="awb-info-item"><div class="label">ステータス</div><div class="value"><span class="badge badge-${awb.status.toLowerCase()}">${formatStatus(awb.status)}</span></div></div>
         <div class="awb-info-item"><div class="label">ルート</div><div class="value">${awb.route || `${awb.origin || "?"}→${awb.destination || "?"}`}</div></div>
         <div class="awb-info-item"><div class="label">個数 / 重量 / 体積</div><div class="value">${awb.total_pieces} pcs / ${awb.total_weight} kg${awb.total_volume ? " / " + formatM3(awb.total_volume) + " M3" : ""}</div></div>
-        <div class="awb-info-item"><div class="label">配送タイプ</div><div class="value">${awb.delivery_type || "-"}</div></div>
+        <div class="awb-info-item"><div class="label">輸送タイプ</div><div class="value">${awb.service_type || "-"}</div></div>
+        <div class="awb-info-item"><div class="label">配送範囲</div><div class="value">${awb.delivery_type || "-"}</div></div>
         <div class="awb-info-item"><div class="label">CO₂</div><div class="value">${awb.carbon_emission ? awb.carbon_emission + " kg" : "-"}</div></div>
         <div class="awb-info-item"><div class="label">距離</div><div class="value">${awb.total_distance ? awb.total_distance + " km" : "-"}</div></div>
       `;
