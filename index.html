@@ -364,7 +364,7 @@
         return `<tr onclick="selectAwb('${a.awb_id}')" id="row-${a.awb_id}">
           <td><strong>${a.awb_display || a.awb_id}</strong></td>
           <td>${route}</td>
-          <td>${a.total_pieces} pcs / ${a.total_weight} kg${a.total_volume ? " / " + a.total_volume + " M3" : ""}</td>
+          <td>${a.total_pieces} pcs / ${a.total_weight} kg${a.total_volume ? " / " + formatM3(a.total_volume) + " M3" : ""}</td>
           <td><span class="badge badge-${a.status.toLowerCase()}">${formatStatus(a.status)}</span></td>
           <td>${dt}</td>
           <td>${a.case_number || '-'}</td>
@@ -416,7 +416,7 @@
       document.getElementById("awbInfo").innerHTML = `
         <div class="awb-info-item"><div class="label">ステータス</div><div class="value"><span class="badge badge-${awb.status.toLowerCase()}">${formatStatus(awb.status)}</span></div></div>
         <div class="awb-info-item"><div class="label">ルート</div><div class="value">${awb.route || `${awb.origin || "?"}→${awb.destination || "?"}`}</div></div>
-        <div class="awb-info-item"><div class="label">個数 / 重量 / 体積</div><div class="value">${awb.total_pieces} pcs / ${awb.total_weight} kg${awb.total_volume ? " / " + awb.total_volume + " M3" : ""}</div></div>
+        <div class="awb-info-item"><div class="label">個数 / 重量 / 体積</div><div class="value">${awb.total_pieces} pcs / ${awb.total_weight} kg${awb.total_volume ? " / " + formatM3(awb.total_volume) + " M3" : ""}</div></div>
         <div class="awb-info-item"><div class="label">配送タイプ</div><div class="value">${awb.delivery_type || "-"}</div></div>
         <div class="awb-info-item"><div class="label">CO₂</div><div class="value">${awb.carbon_emission ? awb.carbon_emission + " kg" : "-"}</div></div>
         <div class="awb-info-item"><div class="label">距離</div><div class="value">${awb.total_distance ? awb.total_distance + " km" : "-"}</div></div>
@@ -732,6 +732,12 @@
         return m.actual_at ? "CARGOAI" : "API待ち";
       }
       return m.source;
+    }
+
+    function formatM3(val) {
+      if (!val) return "";
+      const n = parseFloat(val);
+      return isNaN(n) ? val : n.toFixed(3);
     }
 
     function formatStatus(status) {
